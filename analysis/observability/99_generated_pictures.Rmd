@@ -1,0 +1,463 @@
+---
+title: "Survey-conclusions-pictures"
+author: "Anders Sundelin"
+date: "2025-05-30"
+output: html_document
+params: 
+    cache: "../.cache"
+    output: "../output"
+    reloo: FALSE
+    cores: 2
+    threads: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(bookdown)
+library(ggformula)
+library(brms)
+library(bayesplot)
+library(tidybayes)
+library(ggpubr)
+```
+
+```{r validate-params}
+stopifnot(dir.exists(params$cache), dir.exists(params$output))
+```
+
+```{r ingest}
+source("ingest_survey_data.R")
+raw <- ingest_survey_data("../data/TrainingDayResponses.xlsx")
+ai <- ai_data(raw)
+jaeger <- jaeger_data(raw)
+vue <- vue_data(raw)
+
+ai_usable <- get_ai_usable(ai)
+ai_ease_of_use <- get_ai_ease_of_use(ai)
+ai_accessible <- get_ai_accessible(ai)
+ai_intent <- get_ai_intend_use(ai)
+#
+jaeger_usable <- get_jaeger_usable(jaeger)
+jaeger_ease_of_use <- get_jaeger_ease_of_use(jaeger)
+jaeger_accessible <- get_jaeger_accessible(jaeger)
+jaeger_intent <- get_jaeger_intend_use(jaeger)
+#
+vue_usable <- get_vue_usable(vue)
+vue_ease_of_use <- get_vue_ease_of_use(vue)
+vue_accessible <- get_vue_accessible(vue)
+vue_intent <- get_vue_intend_use(vue)
+
+```
+
+## Replicating pictures
+
+```{r}
+ai |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(n(), round(mean(profYears), 1), round(sd(profYears), 1), median(profYears), min(profYears), max(profYears))
+jaeger |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(n(), round(mean(profYears), 1), round(sd(profYears), 1), median(profYears), min(profYears), max(profYears))
+vue |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(n(), round(mean(profYears), 1), round(sd(profYears), 1), median(profYears), min(profYears), max(profYears))
+
+```
+Let's use the M4/E4/A4/I4 of all models, and generate pictures and estimates from them.
+
+# Usability
+
+```{r}
+d_ai <- ai_usable |> select(usable, site, id)
+d_jaeger <- jaeger_usable |> select(usable, site, id)
+d_vue <- vue_usable |> select(usable, site, id)
+
+formula <- bf(usable | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc              ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+```
+
+```{r m4_ai}
+M4_ai <- brm(
+  data = d_ai,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r m4_jaeger}
+M4_jaeger <- brm(
+  data = d_jaeger,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r m4_vue}
+M4_vue <- brm(
+  data = d_vue,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r plot_posterior_means}
+ai_usable_p <- plot_M4_posterior_mean(M4_ai, "ai-usable", usable_mean, limits=c(1,5)) + facet_wrap(~ "GenAI") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+jaeger_usable_p <- plot_M4_posterior_mean(M4_jaeger, "jaeger-usable", usable_mean, limits=c(1,5)) + facet_wrap(~ "Jaeger") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+vue_usable_p <- plot_M4_posterior_mean(M4_vue, "vue-usable", usable_mean, limits=c(1,5)) + facet_wrap(~ "Vue.JS") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+```
+
+```{r}
+# set plot figure widths
+widths <- c(1,1,1)
+```
+
+```{r}
+(
+usability_p <- annotate_figure(
+  ggarrange(ai_usable_p, jaeger_usable_p, vue_usable_p, ncol=3, widths = widths),
+  top = text_grob("Usability", face="bold", size=14),
+  left = text_grob("a)", face="bold", size=14))
+)
+```
+```{r save_usability}
+figsave("mean_usability.pdf", usability_p, width=15, height=5, units="cm")
+```
+
+# Ease-of-Use
+
+```{r}
+d_ai <- ai_ease_of_use |> select(ease_of_use, site, id)
+d_jaeger <- jaeger_ease_of_use |> select(ease_of_use, site, id)
+d_vue <- vue_ease_of_use |> select(ease_of_use, site, id)
+formula <- bf(ease_of_use | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc                   ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+```
+
+```{r e4_ai}
+E4_ai <- brm(
+  data = d_ai,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r e4_jaeger}
+E4_jaeger <- brm(
+  data = d_jaeger,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r e4_vue}
+E4_vue <- brm(
+  data = d_vue,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r}
+limits <- c(1,5)
+ai_ease_of_use_p <- plot_M4_posterior_mean(E4_ai, "ai-eou", ease_of_use_mean, limits=limits) + facet_wrap(~ "GenAI") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+jaeger_ease_of_use_p <- plot_M4_posterior_mean(E4_jaeger, "jaeger-eou", ease_of_use_mean, limits=limits) + facet_wrap(~ "Jaeger") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+vue_ease_of_use_p <- plot_M4_posterior_mean(E4_vue, "vue-eou", ease_of_use_mean, limits=limits) + facet_wrap(~ "Vue.JS") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+```
+
+```{r}
+(
+ease_of_use_p <- annotate_figure(
+  ggarrange(ai_ease_of_use_p, jaeger_ease_of_use_p, vue_ease_of_use_p, ncol=3, widths=widths),
+  top = text_grob("Ease of Use", face="bold", size=14),
+  left = text_grob("b)", face="bold", size=14))
+
+)
+```
+```{r save_eou}
+figsave("mean_ease_of_use.pdf", ease_of_use_p, width=15, height=5, units="cm")
+```
+
+# Accessibility
+```{r}
+d_ai <- ai_accessible |> select(accessible, site, id)
+d_jaeger <- jaeger_accessible |> select(accessible, site, id)
+d_vue <- vue_accessible |> select(accessible, site, id)
+formula <- bf(accessible | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc                   ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+
+```
+
+```{r a4_ai}
+A4_ai <- brm(
+  data = d_ai,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+
+```{r a4_jaeger}
+A4_jaeger <- brm(
+  data = d_jaeger,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+
+```{r a4_vue}
+A4_vue <- brm(
+  data = d_vue,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r}
+limits <- c(1,5)
+ai_accessible_p <- plot_M4_posterior_mean(A4_ai, "ai-accessible", accessible_mean, limits=limits) + facet_wrap(~ "GenAI") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+jaeger_accessible_p <- plot_M4_posterior_mean(A4_jaeger, "jaeger-accessible", accessible_mean, limits=limits) + facet_wrap(~ "Jaeger") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+vue_accessible_p <- plot_M4_posterior_mean(A4_vue, "vue-accessible", accessible_mean, limits=limits) + facet_wrap(~ "Vue.JS") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+```
+
+```{r}
+(
+accessible_p <- annotate_figure(
+  ggarrange(ai_accessible_p, jaeger_accessible_p, vue_accessible_p, ncol=3, widths=widths),
+  top = text_grob("Ease of Access", face="bold", size=14),
+  left = text_grob("c)", face="bold", size=14))
+)
+```
+```{r save_accessible_mean}
+figsave("mean_accessible.pdf", accessible_p, width=15, height=5, units="cm")
+```
+
+# Intent-to-use
+```{r}
+d_ai <- ai_intent |> select(intent, site, id)
+d_jaeger <- jaeger_intent |> select(intent, site, id)
+d_vue <- vue_intent |> select(intent, site, id)
+
+formula <- bf(intent | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc              ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+```
+
+```{r i4_ai}
+I4_ai <- brm(
+  data = d_ai,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r i4_jaeger}
+I4_jaeger <- brm(
+  data = d_jaeger,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r i4_vue}
+I4_vue <- brm(
+  data = d_vue,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  cores = 4,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+```{r}
+limits <- c(1,5)
+ai_intent_p <- plot_M4_posterior_mean(I4_ai, "ai-intent", intent_mean, limits=limits) + facet_wrap(~ "GenAI") + ggtitle(NULL, NULL) + theme(legend.position = "bottom", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+jaeger_intent_p <- plot_M4_posterior_mean(I4_jaeger, "jaeger-intent", intent_mean, limits=limits) + facet_wrap(~ "Jaeger") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+vue_intent_p <- plot_M4_posterior_mean(I4_vue, "vue-intent", intent_mean, limits=limits) + facet_wrap(~ "Vue.JS") + ggtitle(NULL, NULL) + theme(legend.position = "none", axis.text.y=element_blank(), axis.ticks.y=element_blank())
+```
+
+```{r}
+(
+intent_p <- annotate_figure(
+  ggarrange(ai_intent_p, jaeger_intent_p, vue_intent_p, ncol=3, widths=widths, common.legend = T, legend = "bottom"),
+  top = text_grob("Intent to Use", face="bold", size=14),
+  left = text_grob("d)", face="bold", size=14))
+
+)
+```
+```{r save_intent}
+figsave("mean_intent.pdf", intent_p, width=15, height=5, units="cm")
+```
+
+```{r}
+{
+  overall_p <- ggarrange(usability_p, ease_of_use_p, accessible_p, intent_p, ncol=1, heights=c(1,1,1,1.20))
+}
+```
+
+```{r}
+figsave("mean_overall.pdf", overall_p, device=cairo_pdf, width=15, height=25, units="cm")
+```
+
+
+## Expected value Usability
+
+```{r}
+expected_value_M4(M4_ai)
+```
+```{r}
+expected_value_M4(M4_jaeger)
+```
+```{r}
+expected_value_M4(M4_vue)
+```
+
+## Expected value Ease-of-use
+
+```{r}
+expected_value_M4(E4_ai)
+```
+```{r}
+expected_value_M4(E4_jaeger)
+```
+```{r}
+expected_value_M4(E4_vue)
+```
+
+## Expected value Accessibility
+
+```{r}
+expected_value_M4(A4_ai)
+```
+```{r}
+expected_value_M4(A4_jaeger)
+```
+```{r}
+expected_value_M4(A4_vue)
+```
+
+## Expected value Intent-to-use
+
+```{r}
+expected_value_M4(I4_ai)
+```
+```{r}
+expected_value_M4(I4_jaeger)
+```
+```{r}
+expected_value_M4(I4_vue)
+```
+
+
+

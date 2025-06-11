@@ -31,13 +31,13 @@ Other steps might be needed on other architectures or OSes.
 
 1. Build the docker image via: `docker build -t observability-tracing .`
 
-2. Output files are created in `/home/app/observability/output`, and models are cached in `/home/app/observability/.cache`.
+2. Output files are created in `/home/app/output`, and models are cached in `/home/app/.cache`.
    These directories should be mapped to some directory on your local system.
    First create the needed local directories, and make them available for the docker image:
    `mkdir -p ${PWD}/observability/.cache && mkdir -p ${PWD}/observability/output && chmod -R a+rwx ${PWD}/observability`
 
 3. Run the image, and mount these directories to the container:
-   `docker run --mount type=bind,source=${PWD}/observability,target=/home/app/observability observability-tracing`
+   `docker run --mount type=bind,source=${PWD}/observability/.cache,target=/home/app/.cache --mount type=bind,source=${PWD}/observability/output,target=/home/app/output observability-tracing`
 
 ### Configurability via environment variables
 
@@ -45,7 +45,7 @@ Other steps might be needed on other architectures or OSes.
 
 In case you only want to run some RMarkdown files, a prefix can be specified via a docker environment variable:
 
-`docker run --mount type=bind,source=${PWD}/observability,target=/home/app/observability -e PREFIX=02 observability-tracing`
+`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e PREFIX=02 observability-tracing`
 
 Standard shell globbing rules can be used (but beware to escape them from the regular shell used to start docker).
 
@@ -53,7 +53,7 @@ Standard shell globbing rules can be used (but beware to escape them from the re
 
 In case you want to run with a separately stored cache directory, use the CACHE environment variable, and make sure that it is mounted into the container. For instance:
 
-`docker run --mount type=bind,source=${PWD}/observability,target=/home/app/observability -e PREFIX=02 -e CACHE="../observability/.cache" observability-tracing`
+`docker run --mount type=bind,source=${PWD}/observability/.cache,target=/home/app/.cache -e PREFIX=02 -e CACHE="../.cache" observability-tracing`
 
 #### RELOO
 
@@ -61,7 +61,7 @@ Setting the `RELOO` environment variable to `TRUE` will run the reloo function,
 which performs exact Leave-One-Out Cross-Validation once per datapoint signaled as potentially influential by the regular `loo` function.
 The result of the reloo will be stored in the output directory, where it can be further analysed (e.g. plotted).
 
-`docker run --mount type=bind,source=${PWD}/observability,target=/home/app/observability -e RELOO=TRUE -e PREFIX=02 -e CACHE="../observability/.cache" observability-tracing`
+`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e RELOO=TRUE -e PREFIX=02 -e observability-tracing`
 
 Running `reloo` takes considerably longer to complete, but it should not take much longer than a lunch break.
 The output of the `docker run` command will tell if it is performing the `reloo` step, and the state of the models can be inspected via the `docker top` command.
@@ -82,12 +82,12 @@ UID                 PID                 PPID                C                   
 
 The number of parallelly executing models is controlled via the `CORES` environment, which defaults to 2.
 
-`docker run --mount type=bind,source=${PWD}/observability,target=/home/app/observability -e CORES=2 -e PREFIX=02 -e CACHE="../observability/.cache" observability-tracing`
+`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e CORES=2 -e PREFIX=02 -e CACHE="../.cache" observability-tracing`
 
 #### THREADS
 
 The number of threads in each model is controlled via the `THREADS` environment, which defaults to 4.
 
-`docker run --mount type=bind,source=${PWD}/observability,target=/home/app/observability -e THREADS=4 -e PREFIX=02 -e CACHE="../observability/.cache" observability-tracing`
+`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e THREADS=4 -e PREFIX=02 observability-tracing`
 
 The number of physical CPUs (i.e. ignoring hyperthreads and fake CPUs) should be equal or less than `CORES*THREADS`, as Stan and brms are both quite CPU-intensive.

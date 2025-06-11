@@ -1,0 +1,296 @@
+---
+title: "DevelopmentPractices"
+author: "Anders Sundelin"
+date: "2025-05-04"
+output: html_document
+params: 
+    cache: "../.cache"
+    output: "../output"
+    reloo: FALSE
+    cores: 2
+    threads: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(bookdown)
+library(ggformula)
+library(brms)
+library(bayesplot)
+library(tidybayes)
+library(ggpubr)
+```
+
+## R Markdown
+
+```{r validate-params}
+stopifnot(dir.exists(params$cache), dir.exists(params$output))
+```
+
+```{r ingest}
+set.seed(12345)
+source("ingest_survey_data.R")
+raw <- ingest_devpractices_data("../data/DevelopmentPractices.xlsx")
+df <- raw |> filter(consent == "Yes") |> select(-start_time, -end_time)
+```
+
+```{r}
+summary(df |> select(has_pushed_java, has_pushed_vue, has_added_logs, has_debug_unit, has_debug_ft, has_used_pm, has_traced_jaeger))
+
+```
+
+
+```{r}
+df |> group_by(timezone, has_pushed_java) |> tally()
+#select(has_pushed_java, has_pushed_vue, has_added_logs, has_debug_unit, has_debug_ft, has_used_pm, has_traced_jaeger))
+```
+```{r}
+df |> group_by(timezone, has_pushed_vue) |> tally()
+#select(has_pushed_java, has_pushed_vue, has_added_logs, has_debug_unit, has_debug_ft, has_used_pm, has_traced_jaeger))
+```
+
+```{r}
+df |> group_by(timezone, has_added_logs) |> tally()
+#select(has_pushed_java, has_pushed_vue, has_added_logs, has_debug_unit, has_debug_ft, has_used_pm, has_traced_jaeger))
+```
+
+
+```{r}
+df |> group_by(timezone, logs_kept) |> tally()
+#select(has_pushed_java, has_pushed_vue, has_added_logs, has_debug_unit, has_debug_ft, has_used_pm, has_traced_jaeger))
+```
+
+```{r}
+df |> group_by(timezone, has_debug_unit) |> tally()
+```
+```{r}
+df |> group_by(timezone, has_debug_ft) |> tally()
+```
+```{r}
+df |> group_by(timezone, has_used_pm) |> tally()
+```
+```{r}
+df |> group_by(timezone, has_traced_jaeger) |> tally()
+```
+
+
+## General correlations
+
+```{r}
+df |> ggplot(aes(x=profYear, y=exp_java, color=timezone)) + geom_jitter() 
+```
+```{r}
+df |> group_by(timezone) |> summarize(mean(profYear), sd(profYear),  median(profYear), IQR(profYear), quantile(profYear, 0.25), quantile(profYear, 0.75))
+```
+```{r}
+df |> group_by(timezone) |> mutate(profexp=2025-profYear) |> summarize(n(), mean(profexp), sd(profexp),  median(profexp), min(profexp), max(profexp))
+
+```
+
+```{r}
+df |> group_by(timezone) |> mutate(prodexp=2025-joinedYear) |> summarize(n(), mean(prodexp), sd(prodexp),  median(prodexp), min(prodexp), max(prodexp))
+
+```
+
+```{r}
+df |> ggplot(aes(x=profYear, y=joinedYear, color=timezone)) + geom_jitter() 
+```
+
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(joinedYear), sd(joinedYear),  median(joinedYear), IQR(joinedYear), quantile(joinedYear, 0.25), quantile(joinedYear, 0.75))
+```
+
+### Gen Java experience
+
+Overall 
+```{r}
+df |> summarize(mean(exp_java), sd(exp_java),  median(exp_java), IQR(exp_java), quantile(exp_java, 0.25), quantile(exp_java, 0.75))
+```
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_java), sd(exp_java),  median(exp_java), IQR(exp_java), quantile(exp_java, 0.25), quantile(exp_java, 0.75))
+```
+
+```{r}
+df |> ggplot(aes(x=exp_java, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+
+
+```{r}
+df |> ggplot(aes(x=profYear, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+
+### Gen Vue experience
+```{r}
+df |>  group_by(timezone)|> summarize(mean(exp_vue), sd(exp_vue),  median(exp_vue), IQR(exp_vue), quantile(exp_vue, 0.25), quantile(exp_vue, 0.75))
+```
+
+
+```{r}
+df |> ggplot(aes(x=profYear, y=exp_vue, color=timezone)) + geom_jitter() 
+```
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_vue), sd(exp_vue),  median(exp_vue), IQR(exp_vue), quantile(exp_vue, 0.25), quantile(exp_vue, 0.75))
+```
+```{r}
+df |> ggplot(aes(x=exp_vue, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+
+### Gen Java unit test debug experience
+
+```{r}
+df |>  group_by(timezone)|> summarize(mean(exp_debug_unit), sd(exp_debug_unit),  median(exp_debug_unit), IQR(exp_debug_unit), quantile(exp_debug_unit, 0.25), quantile(exp_debug_unit, 0.75))
+```
+
+```{r}
+df |> ggplot(aes(x=profYear, y=exp_debug_unit, color=timezone)) + geom_jitter() 
+```
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_debug_unit), sd(exp_debug_unit),  median(exp_debug_unit), IQR(exp_debug_unit), quantile(exp_debug_unit, 0.25), quantile(exp_debug_unit, 0.75))
+```
+
+```{r}
+df |> ggplot(aes(x=exp_debug_unit, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+
+### Gen Java ft debug experience
+
+```{r}
+df |>  group_by(timezone)|> summarize(mean(exp_debug_ft), sd(exp_debug_ft),  median(exp_debug_ft), IQR(exp_debug_ft), quantile(exp_debug_ft, 0.25), quantile(exp_debug_ft, 0.75))
+```
+
+```{r}
+df |> ggplot(aes(x=profYear, y=exp_debug_ft, color=timezone)) + geom_jitter() 
+```
+
+```{r}
+df |> ggplot(aes(x=exp_debug_ft, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_debug_ft), sd(exp_debug_ft),  median(exp_debug_ft), IQR(exp_debug_ft), quantile(exp_debug_ft, 0.25), quantile(exp_debug_ft, 0.75))
+```
+
+### Gen Wait report usage experience
+
+```{r}
+df |> ggplot(aes(x=profYear, y=exp_use_pm, color=timezone)) + geom_jitter() 
+```
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_use_pm), sd(exp_use_pm),  median(exp_use_pm), IQR(exp_use_pm), quantile(exp_use_pm, 0.25), quantile(exp_use_pm, 0.75))
+```
+```{r}
+df |> ggplot(aes(x=exp_use_pm, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_use_pm), sd(exp_use_pm),  median(exp_use_pm), IQR(exp_use_pm), quantile(exp_use_pm, 0.25), quantile(exp_use_pm, 0.75))
+```
+
+### Gen OTel/Jaeger experience
+
+
+```{r}
+df |> ggplot(aes(x=profYear, y=exp_used_jaeger, color=timezone)) + geom_jitter() 
+```
+
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_used_jaeger), sd(exp_used_jaeger),  median(exp_used_jaeger), IQR(exp_used_jaeger), quantile(exp_used_jaeger, 0.25), quantile(exp_used_jaeger, 0.75))
+```
+```{r}
+df |> ggplot(aes(x=exp_used_jaeger, fill=timezone)) + geom_histogram(position = "dodge") 
+```
+```{r}
+df |> group_by(timezone) |> summarize(mean(exp_used_jaeger), sd(exp_used_jaeger),  median(exp_used_jaeger), IQR(exp_used_jaeger), quantile(exp_used_jaeger, 0.25), quantile(exp_used_jaeger, 0.75))
+```
+
+```{r}
+long_rates <- df |> select(id, timezone, starts_with("exp_")) |> pivot_longer(starts_with("exp_"), values_to = "selfrating", names_prefix = "exp_") |>
+  mutate(order = as.integer(case_when(
+    name == "java" ~ 1,
+    name == "vue" ~ 2,
+    name == "debug_unit" ~ 3,
+    name == "debug_ft" ~ 4,
+    name == "use_pm" ~ 5,
+    name == "used_jaeger" ~ 6,
+    T ~ NA
+    )),
+    skill = as.factor(case_when(
+    name == "java" ~ "Java\nProgramming",
+    name == "vue" ~ "Vue.JS\nProgramming",
+    name == "debug_unit" ~ "Local\nDebug",
+    name == "debug_ft" ~ "Remote\nDebug",
+    name == "use_pm" ~ "Performance\nMetrics",
+    name == "used_jaeger" ~ "Jaeger\nTracing",
+    T ~ NA
+    )))
+```
+```{r}
+(
+  p <- long_rates |> 
+    mutate(site=as.factor(case_when(
+      timezone == "European" ~ "Europe",
+      timezone == "Indian" ~ "India",
+      T ~ "?"
+      ))) |> 
+    ggplot(aes(x = fct_reorder(skill, order), fill=site, y=selfrating)) + geom_boxplot(alpha=1/2) + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + xlab(NULL) + 
+    scale_y_continuous(name="Self Rated Competence", breaks = c(0,25,50,75,100), 
+                       labels = c("0\nNo knowledge\nSupport needed", "25\nBasic awareness\nLack of confidence", "50\nModerate understanding\nSomewhat confident",
+                                  "75\nSubstantial knowledge\nConfident", "100\nExpert knowledge\nFully confident")) + 
+    theme(legend.position="bottom") + 
+    scale_fill_manual(NULL, values = c("#e66101", "#5e3c99")) 
+)
+```
+
+```{r}
+long_actions <- df |> select(id, timezone, starts_with("has_")) |> pivot_longer(starts_with("has_"), values_to = "action", names_prefix = "has_") |>
+  mutate(order = as.integer(case_when(
+    name == "pushed_java" ~ 1,
+    name == "pushed_vue" ~ 2,
+    name == "added_logs" ~ 3,
+    name == "debug_unit" ~ 4,
+    name == "debug_ft" ~ 5,
+    name == "used_pm" ~ 6,
+    name == "traced_jaeger" ~ 7,
+    T ~ NA
+    )),
+    action_name = as.factor(case_when(
+    name == "pushed_java" ~ "Pushed\nJava",
+    name == "pushed_vue" ~ "Pushed\nVue.JS",
+    name == "added_logs" ~ "Added\nlog statement",
+    name == "debug_unit" ~ "Debugged\nUnit Test",
+    name == "debug_ft" ~ "Debugged\nFunctional Test",
+    name == "used_pm" ~ "Used Perf.\nMetrics",
+    name == "traced_jaeger" ~ "Traced using\nJaeger",
+    T ~ NA
+    )))
+```
+
+```{r}
+long_actions|> group_by(action_name, order, action) |> summarise(n=n()) |> mutate(pct=round(100*n/sum(n), 2)) |> filter(action=="Yes") |> arrange(order)
+```
+
+
+```{r}
+long_actions|> group_by(timezone, action_name, order, action) |> summarise(n=n()) |> mutate(pct=n/sum(n)) |> filter(action=="Yes") |> ggplot(aes(fill=timezone, y=pct, x=fct_reorder(action_name, order))) + geom_bar(position="dodge", stat="identity") + theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + xlab(NULL) + 
+  scale_y_continuous(name="Percentage of respondents\ntaking action during last month", breaks = c(0,0.25,0.50,0.75,1.00), labels = c("0%", "25%", "50%", "75%", "100%")) +
+  theme(legend.position="bottom") + 
+  scale_fill_brewer(name="Timezone", type="qual", palette="Set2")
+```
+
+```{r}
+figsave("background_skills.pdf", p, width = 15, height=10, units = "cm")
+```

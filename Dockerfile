@@ -67,8 +67,8 @@ RUN chmod u+x /home/app/render_all.sh
 
 USER app
 # default destinations
-RUN mkdir -p /home/app/observability/.cache
-RUN mkdir -p /home/app/observability/output
+RUN mkdir -p /home/app/.cache
+RUN mkdir -p /home/app/output
 
 # RMarkdown defaults to use the parent directory of the Rmd as PWD, so paths inside the Rmd should be relative to this.
 # However, the output_dir parameter itself is relative to the docker root (WORKDIR above)
