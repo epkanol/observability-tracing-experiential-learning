@@ -1,0 +1,1343 @@
+---
+title: "Survey Analysis GenAI"
+author: "Anders Sundelin"
+date: "2025-05-04"
+output: html_document
+params: 
+    cache: "../.cache"
+    output: "../output"
+    reloo: FALSE
+    cores: 2
+    threads: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(bookdown)
+library(ggformula)
+library(brms)
+library(bayesplot)
+library(tidybayes)
+```
+
+# AI Stream
+```{r validate-params}
+stopifnot(dir.exists(params$cache), dir.exists(params$output))
+```
+
+
+```{r ingest}
+source("ingest_survey_data.R")
+raw <- ingest_survey_data("../data/TrainingDayResponses.xlsx")
+ai <- ai_data(raw)
+```
+
+## EDA, visualizations
+```{r}
+ai_usable <- get_ai_usable(ai)
+ai_ease_of_use <- get_ai_ease_of_use(ai)
+ai_accessible <- get_ai_accessible(ai)
+ai_intent <- get_ai_intend_use(ai)
+```
+
+```{r}
+rbind(ai_usable |> mutate(trait="usable", rate=usable) |> select(trait, site, rate),
+      ai_ease_of_use |> mutate(trait="ease-of-use", rate=ease_of_use) |> select(trait, site, rate),
+      ai_accessible |> mutate(trait="accessible", rate=accessible) |> select(trait, site, rate),
+      ai_intent |> mutate(trait="intent-to-use", rate=intent) |> select(trait, site, rate)
+      ) |> group_by(trait) |> ggplot(aes(x=as.numeric(rate), fill=site)) +
+    geom_histogram(stat="count", position="dodge") + 
+  scale_x_continuous(name="rating", breaks = 1:7, labels = c("Extremely\nLikely", "Quite\nLikely", "Slightly\nLikely", "Neutral", "Slightly\nUnlikely", "Quite\nUnlikely", "Extremely\nUnlikely") ) +
+  facet_wrap(~trait, ncol=2) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Usability
+
+Calculating thresholds for equal probability of each of the seven responses (given probit regression, i.e. $\Phi$ as cumulative distribution function).
+```{r}
+tibble(rating = 1:7) |>
+  mutate(proportion = 1/7) |>
+  mutate(cumulative_proportion = cumsum(proportion)) |>
+  mutate(right_hand_threshold = qnorm(cumulative_proportion))
+```
+
+
+## Usability, Population-level intercept only
+
+```{r}
+d <- ai_usable |> select(usable)
+formula <- usable | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+
+```
+### Prior predictive checks
+
+```{r m1_ppc}
+M1_ppc <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  seed = 1
+)
+```
+No divergent transitions, all chains sampled OK
+
+```{r}
+pp_check(M1_ppc, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+All outcomes are quite likely, with the middle ones having the highest likelihood (due to our use of separated normal distrubutions, the tails add up).
+
+### Sampling
+```{r m1}
+M1 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- M1
+```
+
+No divergent transitions. Let's do the posterior checks
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+Some $N_{eff}$ values are slightly below 0.5, but well above 0.1
+
+```{r}
+loo <- loo(m)
+loo
+plot(loo)
+```
+No problems with the estimated LOO values, though one observation is above 0.6 (but still below the threshold 0.7).
+
+### Posterior predictive checks
+
+```{r}
+pp_check(M1, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+Our model fits the data well.
+
+```{r}
+summary(M1)
+```
+
+```{r}
+plot_M1_latent_distribution(M1, "usable")
+```
+```{r}
+plot_M1_posterior_mean(M1, "usability", function(df) {df |> summarize(mean(as.numeric(usable))) })
+```
+```{r}
+ai_usable |> summarise(mean(as.numeric(usable)))
+```
+
+## Usability, per site
+
+```{r}
+d <- ai_usable |> select(usable, site)
+formula <- usable | thres(6) ~ 1 + site
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r m2_ppc}
+M2_ppc <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- M2_ppc
+```
+
+```{r}
+pp_check(M2_ppc, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+
+```
+
+Priors looking good, all values are present.
+
+```{r m2}
+M2 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- M2
+```
+No divergent transitions, all sampled correctly.
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+One chain wandered away, related to Intercept[1], but found its way back into the fold. 
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+Some low Neff ratios
+
+```{r}
+pp_check(m, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+
+```
+
+```{r}
+plot_M2_latent_distribution(M2, "usability")
+
+```
+```{r}
+plot_M2_posterior_mean(M2, "usability", function(df) {df |> summarize(mean(as.numeric(usable))) })
+```
+
+```{r}
+d |> group_by(site, usable) |> tally()
+```
+
+
+# Multilevel, reguralized per respondent
+
+```{r}
+d <- ai_usable |> select(usable, site, id)
+formula <- usable | thres(6) ~ 1 + site + (1 | id)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(exponential(5), class = sd))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+
+```
+
+```{r m3_ppc}
+M3_ppc <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula = formula,
+  prior = priors,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+
+```
+```{r}
+pp_check(M3_ppc, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+m <- M3_ppc
+```
+These priors are looking good, all outcomes are possible
+How does the groups look?
+```{r}
+pp_check(M3_ppc, type = "bars_grouped", group="id",
+         ndraws = 500, size = 1/2, fatten = 3/2)
+
+```
+Grouped PPCs are also looking good, we should be able to trust these priors.
+
+```{r m3}
+M3 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- M3
+```
+All chains sampled correctly.
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+These caterpillars look good, and the `disc` continues to be flat, as it is fixed at 1.
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+$\hat{R}$ are looking good, and although some $N_{eff}$ values are low, they range between 0.2 and 1.0.
+
+```{r}
+pp_check(m, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+pp_check(m, type = "bars_grouped", group="id",
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+plot_M2_latent_distribution(m, "usability")
+```
+
+```{r}
+plot_M2_posterior_mean(m, "usability", function(df) {df |> summarize(mean(as.numeric(usable))) })
+```
+
+# Multilevel site, pooling on respondent, variable variance (disc)
+
+```{r}
+d <- ai_usable |> select(usable, site, id)
+formula <- bf(usable | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc              ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r m4_ppc}
+M4_ppc <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+m <- M4_ppc
+```
+
+```{r}
+pp_check(M4_ppc, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r m4}
+M4 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+m <- M4
+```
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+These caterpillars look good, and the `disc` continues to be flat, as it is fixed at 1.
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+```{r}
+summary(M4)
+```
+
+```{r}
+plot_M4_latent_distribution(M4, "usability")
+```
+```{r}
+plot_M4_posterior_mean(M4, "usability-varying", function(df) {df |> summarize(mean(as.numeric(usable))) }, limits=c(1,7))
+```
+
+
+## Ease-of-use
+
+
+## Ease-of-use, intercept-only
+```{r}
+ai_ease_of_use <- get_ai_ease_of_use(ai)
+```
+
+
+```{r e1}
+d <- ai_ease_of_use |> select(ease_of_use)
+formula <- ease_of_use | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+E1 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- E1
+```
+No divergent transitions.
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+Better values, but still some low Neff values (though not as small as for the usable)
+
+```{r}
+loo <- loo(m)
+loo
+plot(loo)
+```
+```{r}
+pp_check(E1, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+
+```{r}
+plot_M1_latent_distribution(E1, "ease of use")
+```
+
+```{r}
+pp_check(E1, type = "hist", ndraws = 8, binwidth = 1) +
+  scale_x_continuous(breaks = 1:6) +
+  ggtitle("PP-check with the pp_check() function") 
+```
+
+```{r}
+plot_M1_posterior_mean(E1, "ease of use", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) })
+```
+```{r}
+ai_ease_of_use |> summarise(mean(as.numeric(ease_of_use)))
+```
+
+## Ease-of-use, per site
+
+```{r}
+d <- ai_ease_of_use |> select(ease_of_use, site)
+formula <- ease_of_use | thres(6) ~ 1 + site
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r e2}
+E2 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- E2
+```
+
+```{r}
+pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+
+```
+
+
+```{r}
+plot_M2_latent_distribution(E2, "ease of use")
+```
+
+```{r}
+plot_M2_posterior_mean(E2, "ease of use", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) })
+```
+
+## Ease-of-use, per site, regularized per respondent
+
+## Ease-of-use
+
+```{r}
+d <- ai_ease_of_use |> select(ease_of_use, site, id)
+formula <- ease_of_use | thres(6) ~ 1 + site + (1 | id)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(exponential(5), class = sd))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r e3}
+E3 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- E3
+```
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+```{r}
+pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+pp_check(m, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+plot_M2_latent_distribution(E3, "ease-of-use")
+```
+
+```{r}
+plot_M2_posterior_mean(E3, "ease-of-use", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) })
+```
+
+## Ease-of-use, pooled on respondent, varying variance per site
+```{r}
+d <- ai_ease_of_use |> select(ease_of_use, site, id)
+formula <- bf(ease_of_use | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc                   ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r e4}
+E4 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+m <- E4
+```
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+These caterpillars look good, and the `b_disc_siteIndia` also mixes well.
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+```{r}
+summary(E4)
+```
+
+```{r}
+plot_M4_latent_distribution(E4, "ease-of-use")
+```
+
+```{r}
+plot_M4_posterior_mean(E4, "ease-of-use-varying", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) }, limits=c(1,7))
+```
+
+
+## Accessibility
+
+
+## Accessibility, intercept-only
+```{r}
+ai_accessibility <- get_ai_accessible(ai)
+```
+
+
+```{r}
+d <- ai_accessibility |> select(accessible)
+formula <- accessible | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r a1}
+A1 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- A1
+```
+No divergent transitions.
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+Better values, but still some low Neff values (though not as small as for the usable)
+
+```{r}
+loo <- loo(m)
+loo
+plot(loo)
+```
+```{r}
+pp_check(A1, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+
+```{r}
+plot_M1_latent_distribution(A1, "accessible")
+```
+
+```{r}
+pp_check(A1, type = "hist", ndraws = 8, binwidth = 1) +
+  scale_x_continuous(breaks = 1:6) +
+  ggtitle("PP-check with the pp_check() function") 
+```
+
+```{r}
+plot_M1_posterior_mean(A1, "accessible", function(df) {df |> summarize(mean(as.numeric(accessible))) })
+```
+```{r}
+ai_accessibility |> summarise(mean(as.numeric(accessible)))
+```
+
+## Accessibility, per site
+
+```{r}
+d <- ai_accessibility |> select(accessible, site)
+formula <- accessible | thres(6) ~ 1 + site
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r a2}
+A2 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- A2
+```
+
+```{r}
+pp_check(m, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+
+```
+
+
+```{r}
+plot_M2_latent_distribution(A2, "accessible")
+```
+
+```{r}
+plot_M2_posterior_mean(A2, "accessible", function(df) {df |> summarize(mean(as.numeric(accessible))) })
+```
+
+## Accessibility, per site, regularized per respondent
+
+```{r}
+d <- ai_accessibility |> select(accessible, site, id)
+formula <- accessible | thres(6) ~ 1 + site + (1 | id)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(exponential(5), class = sd))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r a3}
+A3 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- A3
+```
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+```{r}
+pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+pp_check(m, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+plot_M2_latent_distribution(A3, "accessible")
+```
+
+```{r}
+plot_M2_posterior_mean(A3, "accessible", function(df) {df |> summarize(mean(as.numeric(accessible))) })
+```
+## Accessibility, pooled on respondent, varying variance per site
+```{r}
+d <- ai_accessible |> select(accessible, site, id)
+formula <- bf(accessible | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc                   ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r a4}
+A4 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+m <- A4
+```
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+
+```{r}
+pp_check(A4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+pp_check(A4, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+```{r}
+summary(A4)
+```
+
+```{r}
+plot_M4_latent_distribution(A4, "accessibility")
+```
+```{r}
+plot_M4_posterior_mean(A4, "accessibility-varying", function(df) {df |> summarize(mean(as.numeric(accessible))) }, limits=c(1,7))
+```
+
+
+## Intent to use
+
+
+## Intent, intercept-only
+```{r}
+ai_intent <- get_ai_intend_use(ai)
+```
+
+
+```{r}
+d <- ai_intent |> select(intent)
+formula <- intent | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r i1}
+I1 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- I1
+```
+No divergent transitions.
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+Better values, but still some low Neff values (though not as small as for the usable)
+
+```{r}
+loo <- loo(m)
+loo
+plot(loo)
+```
+```{r}
+pp_check(I1, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+
+```{r}
+plot_M1_latent_distribution(I1, "intent")
+```
+
+```{r}
+pp_check(I1, type = "hist", ndraws = 8, binwidth = 1) +
+  scale_x_continuous(breaks = 1:6) +
+  ggtitle("PP-check with the pp_check() function") 
+```
+
+```{r}
+plot_M1_posterior_mean(I1, "intent", function(df) {df |> summarize(mean(as.numeric(intent))) })
+```
+```{r}
+ai_intent |> summarise(mean(as.numeric(intent)))
+```
+
+## Intent, per site
+
+```{r}
+d <- ai_intent |> select(intent, site)
+formula <- intent | thres(6) ~ 1 + site
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r i2}
+I2 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- I2
+```
+
+```{r}
+pp_check(m, type = "bars", 
+         ndraws = 500, size = 1/2, fatten = 3/2)
+
+```
+
+
+```{r}
+plot_M2_latent_distribution(I2, "intent")
+```
+
+```{r}
+plot_M2_posterior_mean(I2, "intent", function(df) {df |> summarize(mean(as.numeric(intent))) })
+```
+
+## Intent, per site, regularized per respondent
+
+```{r}
+d <- ai_intent |> select(intent, site, id)
+formula <- intent | thres(6) ~ 1 + site + (1 | id)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(exponential(5), class = sd))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r i3}
+I3 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1
+)
+m <- I3
+```
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+```{r}
+pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+pp_check(m, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+plot_M2_latent_distribution(I3, "intent")
+```
+
+```{r}
+plot_M2_posterior_mean(I3, "intent", function(df) {df |> summarize(mean(as.numeric(intent))) })
+```
+
+## Intent-to-use, pooled on respondent, varying variance per site
+```{r}
+d <- ai_intent |> select(intent, site, id)
+formula <- bf(intent | thres(6) ~ 1 + site + (1 | id)) +
+           lf(disc              ~ 0 + site, cmc = FALSE)
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, log(2)/2), class = b, dpar=disc),
+            prior(exponential(5), class = sd)
+            )
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r i4}
+I4 <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+m <- I4
+```
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+
+```{r}
+pp_check(I4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+```{r}
+pp_check(I4, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+```{r}
+loo(I4)
+```
+
+```{r}
+I4_loo <- add_criterion(I4, criterion = "loo")
+```
+```{r, eval=FALSE}
+I4_reloo <- reloo(I4_loo, chains=4)
+print(I4_reloo)
+```
+
+One bad loo value. We do exact refitting of this observation using the reloo function.
+Doing the exact Pareto calculation fits the model all right, no bad loo values any more.
+
+After refitting, all observations are OK (Pareto k < 0.7).
+
+
+```{r}
+plot_M4_latent_distribution(I4, "intent-varying")
+```
+```{r}
+plot_M4_posterior_mean(I4, "intent-varying", function(df) {df |> summarize(mean(as.numeric(intent))) }, limits=c(1,7))
+```
+
+```{r, eval=FALSE}
+# Simulate what happens to our model if it would find 10 new very positive Indians
+I4_fake <- brm(
+  data = rbind(d, data.frame(intent="XL", site="India", id=rep(c("100", "101", "102", "103", "104", "105", "106", "107", "108", "109"), 2))),
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+plot_M4_latent_distribution(I4_fake, "intent-fake-varying")
+
+plot_M4_posterior_mean(I4_fake, "intent-fake-varying", function(df) {df |> summarize(mean(as.numeric(intent))) }, limits=c(1,7))
+
+```
+
+
+# Model comparison
+```{r}
+loo(M1, M2, M3, M4)
+```
+
+
+```{r}
+loo(E1, E2, E3, E4)
+```
+
+
+```{r}
+loo(A1, A2, A3, A4)
+```
+
+```{r}
+loo(I1, I2, I3, I4)
+```
+
+```{r}
+expected_value_M4(M4)
+expected_value_M4(E4)
+expected_value_M4(A4)
+expected_value_M4(I4)
+```

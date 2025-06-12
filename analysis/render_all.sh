@@ -11,7 +11,7 @@
 : "${THREADS:=4}"
 
 SOURCE=analysis
-OUTPUT=observability/output
+OUTPUT=output
 
 cat<<!
 

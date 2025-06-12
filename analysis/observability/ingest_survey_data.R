@@ -4,6 +4,13 @@ figsave <- function(file, p, device="pdf", width=15, height=17.8, units="cm") gg
 pngsave <- function(file, p, width=15, height=17.8, units="cm") ggsave(paste(params$output, file, sep="/"), p, device = "png", dpi = 1200, width=width, height=height, units=units)
 cachefile <- function(filename) paste(params$cache, filename, sep="/")
 
+# BRMS/Stan config parameters. Adapt these to fit your machine
+CHAINS <- 4
+CORES <- params$cores
+ITERATIONS <- 4000
+THREADS <- params$threads
+ADAPT_DELTA <- 0.95
+
 
 # Development Practices survey
 ingest_devpractices_data <- function(file) {
