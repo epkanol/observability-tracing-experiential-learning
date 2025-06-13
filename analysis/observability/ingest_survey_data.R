@@ -382,12 +382,16 @@ get_vue_intend_use <- function(df) {
     mutate(name=as.factor(name), id=as.factor(as.character(id)))
 }
 
+# Functions used to summarize sample means
+
 usable_mean <- function(df) { df |> summarize(mean(as.numeric(usable))) }
 ease_of_use_mean <- function(df) { df |> summarize(mean(as.numeric(ease_of_use))) }
 accessible_mean <- function(df) { df |> summarize(mean(as.numeric(accessible))) }
 intent_mean <- function(df) { df |> summarize(mean(as.numeric(intent))) }
 
+
 # M1: intercept-only model
+
 plot_M1_latent_distribution <- function(m, title, lower=-3.5, upper=3.5) {
   tibble(x = seq(from = lower, to = upper, length.out = 400)) |> 
     mutate(d = dnorm(x = x)) |>

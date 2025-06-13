@@ -3,7 +3,7 @@ title: "Survey Analysis GenAI"
 author: "Anders Sundelin"
 date: "2025-05-04"
 output: html_document
-params: 
+params:
     cache: "../.cache"
     output: "../output"
     reloo: FALSE
@@ -54,23 +54,14 @@ rbind(ai_usable |> mutate(trait="usable", rate=usable) |> select(trait, site, ra
       ai_accessible |> mutate(trait="accessible", rate=accessible) |> select(trait, site, rate),
       ai_intent |> mutate(trait="intent-to-use", rate=intent) |> select(trait, site, rate)
       ) |> group_by(trait) |> ggplot(aes(x=as.numeric(rate), fill=site)) +
-    geom_histogram(stat="count", position="dodge") + 
+    geom_histogram(stat="count", position="dodge") +
   scale_x_continuous(name="rating", breaks = 1:7, labels = c("Extremely\nLikely", "Quite\nLikely", "Slightly\nLikely", "Neutral", "Slightly\nUnlikely", "Quite\nUnlikely", "Extremely\nUnlikely") ) +
   facet_wrap(~trait, ncol=2) +
-  theme_bw() + 
+  theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
-## Usability
-
-Calculating thresholds for equal probability of each of the seven responses (given probit regression, i.e. $\Phi$ as cumulative distribution function).
-```{r}
-tibble(rating = 1:7) |>
-  mutate(proportion = 1/7) |>
-  mutate(cumulative_proportion = cumsum(proportion)) |>
-  mutate(right_hand_threshold = qnorm(cumulative_proportion))
-```
-
+# Usability
 
 ## Usability, Population-level intercept only
 
@@ -84,11 +75,15 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 0.566, 1), class = Intercept, coef = 5),
             prior(normal( 1.068, 1), class = Intercept, coef = 6))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 
 ```
+
+The warning about the default prior not being used can safely be ignored.
+We specigy our own priors for all parameters, and do not rely on `brms` default priors.
+
 ### Prior predictive checks
 
 ```{r m1_ppc}
@@ -110,7 +105,7 @@ M1_ppc <- brm(
 No divergent transitions, all chains sampled OK
 
 ```{r}
-pp_check(M1_ppc, type = "bars", 
+pp_check(M1_ppc, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 All outcomes are quite likely, with the middle ones having the highest likelihood (due to our use of separated normal distrubutions, the tails add up).
@@ -124,7 +119,10 @@ M1 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- M1
@@ -142,7 +140,8 @@ lapply(plots, function(i) {
   mcmc_trace(m, pars = na.omit(pars[start:end]))
   })
 ```
-The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+
+The chains seem to mix well. The disc is flat as the width (variance) of the latent variable is fixed in this model.
 
 ```{r}
 mcmc_plot(m, type="rhat")
@@ -150,6 +149,7 @@ mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
+
 Some $N_{eff}$ values are slightly below 0.5, but well above 0.1
 
 ```{r}
@@ -157,12 +157,13 @@ loo <- loo(m)
 loo
 plot(loo)
 ```
+
 No problems with the estimated LOO values, though one observation is above 0.6 (but still below the threshold 0.7).
 
 ### Posterior predictive checks
 
 ```{r}
-pp_check(M1, type = "bars", 
+pp_check(M1, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
@@ -176,11 +177,13 @@ summary(M1)
 plot_M1_latent_distribution(M1, "usable")
 ```
 ```{r}
-plot_M1_posterior_mean(M1, "usability", function(df) {df |> summarize(mean(as.numeric(usable))) })
+plot_M1_posterior_mean(M1, "usability", usable_mean)
 ```
 ```{r}
 ai_usable |> summarise(mean(as.numeric(usable)))
 ```
+
+Sample mean is visible in the figure as a dashed line (slightly closer to SL than QL, as the numeric value specifies)
 
 ## Usability, per site
 
@@ -195,7 +198,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 1.068, 1), class = Intercept, coef = 6),
             prior(normal(0, 1), class = b))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -209,14 +212,17 @@ M2_ppc <- brm(
   drop_unused_levels = F,
   sample_prior = "only",
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- M2_ppc
 ```
 
 ```{r}
-pp_check(M2_ppc, type = "bars", 
+pp_check(M2_ppc, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 
 ```
@@ -231,7 +237,10 @@ M2 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- M2
@@ -248,17 +257,20 @@ lapply(plots, function(i) {
   mcmc_trace(m, pars = na.omit(pars[start:end]))
   })
 ```
-One chain wandered away, related to Intercept[1], but found its way back into the fold. 
+
+All caterpillar plots look allright, chains mix correctly.
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
-Some low Neff ratios
+
+One $N_{eff}$ value below 0.5, but most are fine.
 
 ```{r}
-pp_check(m, type = "bars", 
+pp_check(m, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 
 ```
@@ -268,7 +280,7 @@ plot_M2_latent_distribution(M2, "usability")
 
 ```
 ```{r}
-plot_M2_posterior_mean(M2, "usability", function(df) {df |> summarize(mean(as.numeric(usable))) })
+plot_M2_posterior_mean(M2, "usability", usable_mean)
 ```
 
 ```{r}
@@ -290,7 +302,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal(0, 1), class = b),
             prior(exponential(5), class = sd))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 
@@ -305,23 +317,32 @@ M3_ppc <- brm(
   drop_unused_levels = F,
   sample_prior = "only",
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 
 ```
+
+Two divergent transitions, but otherwise the priors look allright.
+
 ```{r}
-pp_check(M3_ppc, type = "bars", 
+pp_check(M3_ppc, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 m <- M3_ppc
 ```
+
 These priors are looking good, all outcomes are possible
 How does the groups look?
+
 ```{r}
 pp_check(M3_ppc, type = "bars_grouped", group="id",
          ndraws = 500, size = 1/2, fatten = 3/2)
 
 ```
+
 Grouped PPCs are also looking good, we should be able to trust these priors.
 
 ```{r m3}
@@ -332,11 +353,15 @@ M3 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- M3
 ```
+
 All chains sampled correctly.
 
 ```{r}
@@ -349,6 +374,7 @@ lapply(plots, function(i) {
   mcmc_trace(m, pars = na.omit(pars[start:end]))
   })
 ```
+
 These caterpillars look good, and the `disc` continues to be flat, as it is fixed at 1.
 
 ```{r}
@@ -357,10 +383,11 @@ mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
-$\hat{R}$ are looking good, and although some $N_{eff}$ values are low, they range between 0.2 and 1.0.
+
+$\hat{R}$ are looking good, and although some $N_{eff}$ values are low, they range between 0.3 and 1.0.
 
 ```{r}
-pp_check(m, type = "bars", 
+pp_check(m, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
@@ -373,9 +400,13 @@ pp_check(m, type = "bars_grouped", group="id",
 plot_M2_latent_distribution(m, "usability")
 ```
 
+Total overlap of Europe and Indian samples.
+
 ```{r}
-plot_M2_posterior_mean(m, "usability", function(df) {df |> summarize(mean(as.numeric(usable))) })
+plot_M2_posterior_mean(m, "usability", usable_mean)
 ```
+
+Slightly wider distribution of expected value for Europe, even incorporating Neutral in the 95% probablerange.
 
 # Multilevel site, pooling on respondent, variable variance (disc)
 
@@ -394,7 +425,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(exponential(5), class = sd)
             )
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -408,9 +439,13 @@ M4_ppc <- brm(
   drop_unused_levels = F,
   sample_prior = "only",
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 m <- M4_ppc
 ```
@@ -418,6 +453,8 @@ m <- M4_ppc
 ```{r}
 pp_check(M4_ppc, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 ```
+
+These priors both sample well, and allows all possible values (1-7). Like the other models, the priors place most probability on the middle range of scores.
 
 ```{r m4}
 M4 <- brm(
@@ -427,12 +464,22 @@ M4 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 m <- M4
 ```
+
+This model is quite complex, so we have to adjust the step size (adapt_delta) and the initial value.
+Normally, Stan draws initial values from a uniform distribution between [-2,2].
+When using `cmdstanr`, we are a bit limited as regards to what `brms` allows (`init_r` does not seem to be supported)
+So, here, we just set the initial value to the middle point of the default, i.e. `0`.
+Sampling will continue from there, in various directions.
 
 ```{r}
 p <- mcmc_trace(m)
@@ -454,6 +501,8 @@ mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
 
+All $N_{eff}$ values are above 0.3, quite good.
+
 ```{r}
 summary(M4)
 ```
@@ -462,11 +511,11 @@ summary(M4)
 plot_M4_latent_distribution(M4, "usability")
 ```
 ```{r}
-plot_M4_posterior_mean(M4, "usability-varying", function(df) {df |> summarize(mean(as.numeric(usable))) }, limits=c(1,7))
+plot_M4_posterior_mean(M4, "usability-varying", usable_mean, limits=c(1,7))
 ```
 
 
-## Ease-of-use
+# Ease-of-use
 
 
 ## Ease-of-use, intercept-only
@@ -485,7 +534,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 0.566, 1), class = Intercept, coef = 5),
             prior(normal( 1.068, 1), class = Intercept, coef = 6))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 E1 <- brm(
@@ -495,7 +544,10 @@ E1 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- E1
@@ -513,14 +565,16 @@ lapply(plots, function(i) {
   })
 ```
 
-The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+The chains seem to mix well, and the `disc` is flat.
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
-Better values, but still some low Neff values (though not as small as for the usable)
+
+Good values, lowest $N_{eff}$ value is about 0.4.
 
 ```{r}
 loo <- loo(m)
@@ -528,10 +582,11 @@ loo
 plot(loo)
 ```
 ```{r}
-pp_check(E1, type = "bars", 
+pp_check(E1, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
+No problems with the posterior checks or the LOO-CV estimate.
 
 ```{r}
 plot_M1_latent_distribution(E1, "ease of use")
@@ -539,12 +594,12 @@ plot_M1_latent_distribution(E1, "ease of use")
 
 ```{r}
 pp_check(E1, type = "hist", ndraws = 8, binwidth = 1) +
-  scale_x_continuous(breaks = 1:6) +
-  ggtitle("PP-check with the pp_check() function") 
+  scale_x_continuous(breaks = 1:7) +
+  ggtitle("Example draws from the posterior")
 ```
 
 ```{r}
-plot_M1_posterior_mean(E1, "ease of use", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) })
+plot_M1_posterior_mean(E1, "ease of use",  ease_of_use_mean)
 ```
 ```{r}
 ai_ease_of_use |> summarise(mean(as.numeric(ease_of_use)))
@@ -563,7 +618,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 1.068, 1), class = Intercept, coef = 6),
             prior(normal(0, 1), class = b))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -576,15 +631,19 @@ E2 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- E2
 ```
 
+No divergent transitions
+
 ```{r}
 pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
-
 ```
 
 
@@ -592,13 +651,15 @@ pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 plot_M2_latent_distribution(E2, "ease of use")
 ```
 
+Very similar distribution for the two sites.
+
 ```{r}
-plot_M2_posterior_mean(E2, "ease of use", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) })
+plot_M2_posterior_mean(E2, "ease of use",  ease_of_use_mean)
 ```
 
-## Ease-of-use, per site, regularized per respondent
+Slightly wider 95% credible interval for the European participants.
 
-## Ease-of-use
+## Ease-of-use, per site, regularized per respondent
 
 ```{r}
 d <- ai_ease_of_use |> select(ease_of_use, site, id)
@@ -612,7 +673,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal(0, 1), class = b),
             prior(exponential(5), class = sd))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -625,11 +686,16 @@ E3 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- E3
 ```
+
+No divergent transitions
 
 ```{r}
 p <- mcmc_trace(m)
@@ -642,12 +708,16 @@ lapply(plots, function(i) {
   })
 ```
 
+Caterpillar plots look OK
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
+
+Good diagnostics, lowest $N_{eff}$ is over 0.3.
 
 ```{r}
 pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -661,8 +731,10 @@ pp_check(m, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten 
 plot_M2_latent_distribution(E3, "ease-of-use")
 ```
 
+Similar distributions, slightly more separated that the non-grouped model E2.
+
 ```{r}
-plot_M2_posterior_mean(E3, "ease-of-use", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) })
+plot_M2_posterior_mean(E3, "ease-of-use",  ease_of_use_mean)
 ```
 
 ## Ease-of-use, pooled on respondent, varying variance per site
@@ -681,7 +753,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(exponential(5), class = sd)
             )
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -694,12 +766,19 @@ E4 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 m <- E4
 ```
+
+No divergent transitions, all chains sampled well
+
 ```{r}
 p <- mcmc_trace(m)
 pars <- levels(p[["data"]][["parameter"]])
@@ -719,20 +798,28 @@ mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
+
+Good diagnostics, lowest $N_{eff}$ is above 0.3
+
 ```{r}
 summary(E4)
 ```
 
 ```{r}
-plot_M4_latent_distribution(E4, "ease-of-use")
+plot_M4_latent_distribution(E4, "ease-of-use-varying")
 ```
+
+Here we clearly see that the Indian respondents are tighter (less variance).
+Which is weird, as their answers have more variance.
+Perhaps the fewer responses in Europe give more impact to the priors?
 
 ```{r}
-plot_M4_posterior_mean(E4, "ease-of-use-varying", function(df) {df |> summarize(mean(as.numeric(ease_of_use))) }, limits=c(1,7))
+plot_M4_posterior_mean(E4, "ease-of-use-varying",  ease_of_use_mean, limits=c(1,7))
 ```
 
+The predictions are very similar for the two sites, anyway
 
-## Accessibility
+# Accessibility
 
 
 ## Accessibility, intercept-only
@@ -751,7 +838,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 0.566, 1), class = Intercept, coef = 5),
             prior(normal( 1.068, 1), class = Intercept, coef = 6))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -764,11 +851,15 @@ A1 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- A1
 ```
+
 No divergent transitions.
 
 ```{r}
@@ -782,14 +873,16 @@ lapply(plots, function(i) {
   })
 ```
 
-The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+The chains seem to mix well, and the disc is flat.
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
-Better values, but still some low Neff values (though not as small as for the usable)
+
+Good diagnostics, lowest $N_{eff}$ is about 0.4.
 
 ```{r}
 loo <- loo(m)
@@ -797,10 +890,11 @@ loo
 plot(loo)
 ```
 ```{r}
-pp_check(A1, type = "bars", 
+pp_check(A1, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
+No problems with LOO-CV or the posterior checks
 
 ```{r}
 plot_M1_latent_distribution(A1, "accessible")
@@ -808,16 +902,19 @@ plot_M1_latent_distribution(A1, "accessible")
 
 ```{r}
 pp_check(A1, type = "hist", ndraws = 8, binwidth = 1) +
-  scale_x_continuous(breaks = 1:6) +
-  ggtitle("PP-check with the pp_check() function") 
+  scale_x_continuous(breaks = 1:7) +
+  ggtitle("PP-check with the pp_check() function")
 ```
 
 ```{r}
-plot_M1_posterior_mean(A1, "accessible", function(df) {df |> summarize(mean(as.numeric(accessible))) })
+plot_M1_posterior_mean(A1, "accessible", accessible_mean)
 ```
+
 ```{r}
 ai_accessibility |> summarise(mean(as.numeric(accessible)))
 ```
+
+Sample mean is closer to QL, as shown in the figure.
 
 ## Accessibility, per site
 
@@ -832,7 +929,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 1.068, 1), class = Intercept, coef = 6),
             prior(normal(0, 1), class = b))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -845,25 +942,33 @@ A2 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- A2
 ```
 
+Chains mix well
+
 ```{r}
-pp_check(m, type = "bars", 
+pp_check(m, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 
 ```
 
+Posterior predictions look representative
 
 ```{r}
 plot_M2_latent_distribution(A2, "accessible")
 ```
 
+Very similar distributions
+
 ```{r}
-plot_M2_posterior_mean(A2, "accessible", function(df) {df |> summarize(mean(as.numeric(accessible))) })
+plot_M2_posterior_mean(A2, "accessible", accessible_mean)
 ```
 
 ## Accessibility, per site, regularized per respondent
@@ -880,7 +985,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal(0, 1), class = b),
             prior(exponential(5), class = sd))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -893,11 +998,16 @@ A3 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- A3
 ```
+
+No divergent transitions.
 
 ```{r}
 p <- mcmc_trace(m)
@@ -910,12 +1020,16 @@ lapply(plots, function(i) {
   })
 ```
 
+Chains mix well
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
+
+OK diagnostics, lowest $N_{eff}$ is about 0.25.
 
 ```{r}
 pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -929,10 +1043,14 @@ pp_check(m, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten 
 plot_M2_latent_distribution(A3, "accessible")
 ```
 
+Very similar distributions.
+
 ```{r}
-plot_M2_posterior_mean(A3, "accessible", function(df) {df |> summarize(mean(as.numeric(accessible))) })
+plot_M2_posterior_mean(A3, "accessible", accessible_mean)
 ```
+
 ## Accessibility, pooled on respondent, varying variance per site
+
 ```{r}
 d <- ai_accessible |> select(accessible, site, id)
 formula <- bf(accessible | thres(6) ~ 1 + site + (1 | id)) +
@@ -948,7 +1066,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(exponential(5), class = sd)
             )
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -961,12 +1079,18 @@ A4 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 m <- A4
 ```
+
+No divergent transitions, or starting point collapses, when we fix the step size and the init.
 
 ```{r}
 p <- mcmc_trace(m)
@@ -979,6 +1103,7 @@ lapply(plots, function(i) {
   })
 ```
 
+Chains mix well.
 
 ```{r}
 mcmc_plot(m, type="rhat")
@@ -987,6 +1112,7 @@ mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
 
+Good diagnostics, lowest $N_{eff}$ is abit above 0.25 now.
 
 ```{r}
 pp_check(A4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -995,6 +1121,9 @@ pp_check(A4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 ```{r}
 pp_check(A4, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
 ```
+
+Posterior checks look OK.
+
 ```{r}
 summary(A4)
 ```
@@ -1002,13 +1131,15 @@ summary(A4)
 ```{r}
 plot_M4_latent_distribution(A4, "accessibility")
 ```
+
+Quite similar distribution for the two sites.
+
 ```{r}
-plot_M4_posterior_mean(A4, "accessibility-varying", function(df) {df |> summarize(mean(as.numeric(accessible))) }, limits=c(1,7))
+plot_M4_posterior_mean(A4, "accessibility-varying", accessible_mean, limits=c(1,7))
 ```
 
 
-## Intent to use
-
+# Intent to use
 
 ## Intent, intercept-only
 ```{r}
@@ -1026,7 +1157,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 0.566, 1), class = Intercept, coef = 5),
             prior(normal( 1.068, 1), class = Intercept, coef = 6))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -1039,11 +1170,15 @@ I1 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- I1
 ```
+
 No divergent transitions.
 
 ```{r}
@@ -1057,25 +1192,29 @@ lapply(plots, function(i) {
   })
 ```
 
-The chains seem to mix well. The disc is flat as we only have an intercept (threshold) model, no slopes or group-level effects.
+The chains seem to mix well, and the `disc` is flat.
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
-Better values, but still some low Neff values (though not as small as for the usable)
+
+Good diagnostics, lowest $N_{eff}$ is about 0.4.
 
 ```{r}
 loo <- loo(m)
 loo
 plot(loo)
 ```
+
 ```{r}
-pp_check(I1, type = "bars", 
+pp_check(I1, type = "bars",
          ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
+Good LOO-CV and posterior checks.
 
 ```{r}
 plot_M1_latent_distribution(I1, "intent")
@@ -1083,13 +1222,16 @@ plot_M1_latent_distribution(I1, "intent")
 
 ```{r}
 pp_check(I1, type = "hist", ndraws = 8, binwidth = 1) +
-  scale_x_continuous(breaks = 1:6) +
-  ggtitle("PP-check with the pp_check() function") 
+  scale_x_continuous(breaks = 1:7) +
+  ggtitle("Example draws from the posterior")
 ```
 
 ```{r}
-plot_M1_posterior_mean(I1, "intent", function(df) {df |> summarize(mean(as.numeric(intent))) })
+plot_M1_posterior_mean(I1, "intent",  intent_mean)
 ```
+
+Estimate is quite close to SL, even though sample mean is a bit closer towards QL.
+
 ```{r}
 ai_intent |> summarise(mean(as.numeric(intent)))
 ```
@@ -1107,7 +1249,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal( 1.068, 1), class = Intercept, coef = 6),
             prior(normal(0, 1), class = b))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -1120,16 +1262,19 @@ I2 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- I2
 ```
 
-```{r}
-pp_check(m, type = "bars", 
-         ndraws = 500, size = 1/2, fatten = 3/2)
+No divergent transitions.
 
+```{r}
+pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
 
@@ -1137,9 +1282,13 @@ pp_check(m, type = "bars",
 plot_M2_latent_distribution(I2, "intent")
 ```
 
+A bit more separated distributions, India have a higher tendency towards XL/QL.
+
 ```{r}
-plot_M2_posterior_mean(I2, "intent", function(df) {df |> summarize(mean(as.numeric(intent))) })
+plot_M2_posterior_mean(I2, "intent",  intent_mean)
 ```
+
+Which is also visible in the expected value.
 
 ## Intent, per site, regularized per respondent
 
@@ -1155,7 +1304,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(normal(0, 1), class = b),
             prior(exponential(5), class = sd))
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -1168,11 +1317,16 @@ I3 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1
 )
 m <- I3
 ```
+
+No divergent transitions.
 
 ```{r}
 p <- mcmc_trace(m)
@@ -1185,12 +1339,16 @@ lapply(plots, function(i) {
   })
 ```
 
+Chains mix well.
+
 ```{r}
 mcmc_plot(m, type="rhat")
 mcmc_plot(m, type="rhat_hist")
 mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
+
+Good diagnostics, lowest $N_{eff}$ is around 0.3.
 
 ```{r}
 pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -1200,12 +1358,16 @@ pp_check(m, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 pp_check(m, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
+Good posterior checks
+
 ```{r}
 plot_M2_latent_distribution(I3, "intent")
 ```
 
+Similar separation as the non-grouped version I2.
+
 ```{r}
-plot_M2_posterior_mean(I3, "intent", function(df) {df |> summarize(mean(as.numeric(intent))) })
+plot_M2_posterior_mean(I3, "intent",  intent_mean)
 ```
 
 ## Intent-to-use, pooled on respondent, varying variance per site
@@ -1224,7 +1386,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
             prior(exponential(5), class = sd)
             )
 validate_prior(prior = priors,
-               data=d, 
+               data=d,
                family=cumulative(probit),
                formula=formula)
 ```
@@ -1237,12 +1399,18 @@ I4 <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 m <- I4
 ```
+
+No divergent transtions, or starting point problems when we fixed the `init` value and step size `adapt_delta`.
 
 ```{r}
 p <- mcmc_trace(m)
@@ -1255,6 +1423,7 @@ lapply(plots, function(i) {
   })
 ```
 
+Chains mix well for all parameters, including `b_disc_siteIndia`.
 
 ```{r}
 mcmc_plot(m, type="rhat")
@@ -1263,6 +1432,7 @@ mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
 
+Diagnostics look good, lowest $N_{eff}$ is above 0.25.
 
 ```{r}
 pp_check(I4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -1271,33 +1441,35 @@ pp_check(I4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 ```{r}
 pp_check(I4, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
 ```
+
+Good posterior checks
+
 ```{r}
 loo(I4)
 ```
 
+No problems with the LOO-CV.
+
 ```{r}
 I4_loo <- add_criterion(I4, criterion = "loo")
 ```
-```{r, eval=FALSE}
-I4_reloo <- reloo(I4_loo, chains=4)
-print(I4_reloo)
-```
-
-One bad loo value. We do exact refitting of this observation using the reloo function.
-Doing the exact Pareto calculation fits the model all right, no bad loo values any more.
-
-After refitting, all observations are OK (Pareto k < 0.7).
 
 
 ```{r}
 plot_M4_latent_distribution(I4, "intent-varying")
 ```
+
+Quite similar distributions between the sites.
+
 ```{r}
-plot_M4_posterior_mean(I4, "intent-varying", function(df) {df |> summarize(mean(as.numeric(intent))) }, limits=c(1,7))
+plot_M4_posterior_mean(I4, "intent-varying",  intent_mean, limits=c(1,7))
 ```
 
-```{r, eval=FALSE}
-# Simulate what happens to our model if it would find 10 new very positive Indians
+## Simulating rave reviews
+
+With this model, we can simulate what would happen if we get a new bunch of very positive reviews on one site.
+
+```{r}
 I4_fake <- brm(
   data = rbind(d, data.frame(intent="XL", site="India", id=rep(c("100", "101", "102", "103", "104", "105", "106", "107", "108", "109"), 2))),
   family = cumulative(probit),
@@ -1305,16 +1477,42 @@ I4_fake <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  warmup = 1000,    iter  = ITERATIONS,    chains = CHAINS,  cores = CORES,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
-plot_M4_latent_distribution(I4_fake, "intent-fake-varying")
+plot_M4_latent_distribution(I4_fake, "intent-fake-india")
 
-plot_M4_posterior_mean(I4_fake, "intent-fake-varying", function(df) {df |> summarize(mean(as.numeric(intent))) }, limits=c(1,7))
-
+plot_M4_posterior_mean(I4_fake, "intent-fake-india",  intent_mean, limits=c(1,7))
 ```
 
+Because we have few Europe respondents, when we add 10 Indian respondents, the credible interval for Europe gets wider, and almost reaches to Slightly UnLikely (whereas the Indian cohort gets closer to Extremely Likely).
+Europe serves as the reference category, its curve will always be $\mathcal{N}(0,1)$. But the Indian distribution changes, via the dispersion factor.
+
+```{r}
+I4_fake <- brm(
+  data = rbind(d, data.frame(intent="XL", site="Europe", id=rep(c("100", "101", "102", "103", "104", "105", "106", "107", "108", "109"), 2))),
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99),
+  init = 0
+)
+plot_M4_latent_distribution(I4_fake, "intent-fake-europe")
+
+plot_M4_posterior_mean(I4_fake, "intent-fake-europe",  intent_mean, limits=c(1,7))
+```
 
 # Model comparison
 ```{r}
@@ -1334,6 +1532,9 @@ loo(A1, A2, A3, A4)
 ```{r}
 loo(I1, I2, I3, I4)
 ```
+
+For the accessibility and intent to use, there is very little difference between the models.
+The `elpd_diff` is barely one standard deviation away between the highest and the lowest ranked models.
 
 ```{r}
 expected_value_M4(M4)

@@ -1,0 +1,139 @@
+---
+title: "General Discussion on Probit Priors for Likert Data Analysis"
+author: "Anders Sundelin"
+date: "2025-05-01"
+output: html_document
+params: 
+    cache: "../.cache"
+    output: "../output"
+    reloo: FALSE
+    cores: 2
+    threads: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(bookdown)
+library(ggformula)
+library(brms)
+library(bayesplot)
+library(tidybayes)
+library(ggpubr)
+```
+
+```{r ingest}
+source("ingest_survey_data.R")
+raw <- ingest_survey_data("../data/TrainingDayResponses.xlsx")
+jaeger <- jaeger_data(raw) 
+```
+```{r}
+jaeger_usable <- get_jaeger_usable(jaeger)
+jaeger_ease_of_use <- get_jaeger_ease_of_use(jaeger)
+jaeger_accessible <- get_jaeger_accessible(jaeger)
+jaeger_intent <- get_jaeger_intend_use(jaeger)
+```
+
+# Prior Selection 7-level Likert Analysis
+
+Discussing what priors are suitable for analysing a 7-level Likert scale, where all options are possible.
+
+Calculating thresholds for similar probability of each of the seven responses (given probit regression, i.e. $\Phi$ as cumulative distribution function).
+```{r}
+tibble(rating = 1:7) |>
+  mutate(proportion = 1/7) |>
+  mutate(cumulative_proportion = cumsum(proportion)) |>
+  mutate(right_hand_threshold = qnorm(cumulative_proportion))
+```
+
+Unfortunately, `brms` do not yet support Dirichlet priors, so we make do with six $\mathcal{N}(\tau_i, 1)$ distributions.
+Because of overlapping tails, this means that there is slightly more probability in the middle of the scale, but this is also quite typical of responses.
+
+## Comparison with default priors
+
+```{r}
+d <- jaeger_usable |> select(usable)
+formula <- usable | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+validate_prior(prior = priors,
+               data=d, 
+               family=cumulative(probit),
+               formula=formula)
+```
+
+```{r ppc}
+(left_p <- pp_check(brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  warmup = 1000,
+  iter  = ITERATIONS,    
+  chains = CHAINS,  
+  cores = CORES,
+  seed = 1
+ ), type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+)
+```
+
+No divergent transitions using those priors, and we see that all Likert levels are quite likely.
+How do these priors compare to the default `student_t(3, 0, 2.5)`?
+
+```{r}
+(right_p <- pp_check(brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  warmup = 1000, 
+  iter  = ITERATIONS,    
+  chains = CHAINS,
+  cores = CORES,
+  seed = 1
+), type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+)
+```
+
+```{r}
+ggarrange(left_p + ggtitle("Six N(tau,1) priors"), right_p + ggtitle("Default prior, Student_t(3, 0, 2.5)"), ncol=2, widths=c(1,1))
+```
+
+
+Compared to the default `brms` priors, our priors are more tolerant to values at the end of the scale (i.e., 1, 2, 6, 7).
+This is visible as the expected value (dot) is clearly visible.
+For our data, which has lot of values tending positive (towards 1), this is appropriate.
+We would expect more data towards the end of the scale.
+
+# Standard deviation priors.
+
+Visualization of the exponential distribution, which we use for standard deviations.
+
+```{r}
+ggplot(data.frame(x=seq(0,4,by=0.1))) + theme_bw() +
+  stat_function(aes(x), fun=dexp, col="#2b83ba", linewidth=1, args=(mean=1)) +
+  stat_function(aes(x), fun=dexp, col="#fdae61", linewidth=1, args=(mean=2)) + 
+  stat_function(aes(x), fun=dexp, col="#d7191c", linewidth=1, args=(mean=5)) + 
+  stat_function(aes(x), fun=dexp, col="#abdda4", linewidth=1, args=(mean=10)) 
+```
+
+For a probit regression using $\mathcal{N}(0, 1)$, values outside [-3,3] is very unlikely (as >99% probability is contained with those six standard deviation).
+This means that `exp(1)` is quite wide, and cause the sampler to go too much astray.
+On the other hand, `exp(10)` could be seen as too narrow, so we settle for the middle, and use `exp(5)` for most of our standard deviation priors.
+

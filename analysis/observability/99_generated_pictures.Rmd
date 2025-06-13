@@ -3,7 +3,7 @@ title: "Survey-conclusions-pictures"
 author: "Anders Sundelin"
 date: "2025-05-30"
 output: html_document
-params: 
+params:
     cache: "../.cache"
     output: "../output"
     reloo: FALSE
@@ -57,15 +57,15 @@ vue_intent <- get_vue_intend_use(vue)
 
 ```
 
-## Replicating pictures
+# Replicating pictures
 
 ```{r}
-ai |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(n(), round(mean(profYears), 1), round(sd(profYears), 1), median(profYears), min(profYears), max(profYears))
-jaeger |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(n(), round(mean(profYears), 1), round(sd(profYears), 1), median(profYears), min(profYears), max(profYears))
-vue |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(n(), round(mean(profYears), 1), round(sd(profYears), 1), median(profYears), min(profYears), max(profYears))
-
+ai |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(N=n(), mean=round(mean(profYears), 1), sd=round(sd(profYears), 1), median=median(profYears), min=min(profYears), max=max(profYears))
+jaeger |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(N=n(), mean=round(mean(profYears), 1), sd=round(sd(profYears), 1), median=median(profYears), min=min(profYears), max=max(profYears))
+vue |> group_by(site) |> mutate(profYears=2025-profYear) |> summarize(N=n(), mean=round(mean(profYears), 1), sd=round(sd(profYears), 1), median=median(profYears), min=min(profYears), max=max(profYears))
 ```
-Let's use the M4/E4/A4/I4 of all models, and generate pictures and estimates from them.
+
+Based on the LOO comparison, we decide to use the M4/E4/A4/I4 of all models, and generate pictures and estimates from them.
 
 # Usability
 
@@ -96,9 +96,13 @@ M4_ai <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -110,9 +114,13 @@ M4_jaeger <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -124,9 +132,13 @@ M4_vue <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -181,9 +193,13 @@ E4_ai <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -195,9 +211,13 @@ E4_jaeger <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -209,9 +229,13 @@ E4_vue <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -263,9 +287,13 @@ A4_ai <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -278,9 +306,13 @@ A4_jaeger <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -293,9 +325,13 @@ A4_vue <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -346,9 +382,13 @@ I4_ai <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -360,9 +400,13 @@ I4_jaeger <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -374,9 +418,13 @@ I4_vue <- brm(
   prior = priors,
   drop_unused_levels = F,
   backend="cmdstanr",
-  cores = 4,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
   seed = 1,
-  control = list(adapt_delta=0.99)
+  control = list(adapt_delta=0.99),
+  init = 0
 )
 ```
 
@@ -458,6 +506,3 @@ expected_value_M4(I4_jaeger)
 ```{r}
 expected_value_M4(I4_vue)
 ```
-
-
-
