@@ -8,7 +8,6 @@ params:
     output: "../output"
     reloo: FALSE
     cores: 2
-    threads: 4
 ---
 
 ```{r setup, include=FALSE}
@@ -91,6 +90,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r m4_ai}
 M4_ai <- brm(
   data = d_ai,
+  file = cachefile("genai-M4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -109,6 +109,7 @@ M4_ai <- brm(
 ```{r m4_jaeger}
 M4_jaeger <- brm(
   data = d_jaeger,
+  file = cachefile("jaeger-M4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -127,6 +128,7 @@ M4_jaeger <- brm(
 ```{r m4_vue}
 M4_vue <- brm(
   data = d_vue,
+  file = cachefile("vue-M4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -188,6 +190,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r e4_ai}
 E4_ai <- brm(
   data = d_ai,
+  file = cachefile("genai-E4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -206,6 +209,7 @@ E4_ai <- brm(
 ```{r e4_jaeger}
 E4_jaeger <- brm(
   data = d_jaeger,
+  file = cachefile("jaeger-E4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -224,6 +228,7 @@ E4_jaeger <- brm(
 ```{r e4_vue}
 E4_vue <- brm(
   data = d_vue,
+  file = cachefile("vue-E4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -282,6 +287,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r a4_ai}
 A4_ai <- brm(
   data = d_ai,
+  file = cachefile("genai-A4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -301,6 +307,7 @@ A4_ai <- brm(
 ```{r a4_jaeger}
 A4_jaeger <- brm(
   data = d_jaeger,
+  file = cachefile("jaeger-A4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -320,6 +327,7 @@ A4_jaeger <- brm(
 ```{r a4_vue}
 A4_vue <- brm(
   data = d_vue,
+  file = cachefile("vue-A4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -377,6 +385,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r i4_ai}
 I4_ai <- brm(
   data = d_ai,
+  file = cachefile("genai-I4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -395,6 +404,7 @@ I4_ai <- brm(
 ```{r i4_jaeger}
 I4_jaeger <- brm(
   data = d_jaeger,
+  file = cachefile("jaeger-I4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -413,6 +423,7 @@ I4_jaeger <- brm(
 ```{r i4_vue}
 I4_vue <- brm(
   data = d_vue,
+  file = cachefile("vue-I4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,

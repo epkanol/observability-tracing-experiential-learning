@@ -8,7 +8,6 @@ params:
     output: "../output"
     reloo: FALSE
     cores: 2
-    threads: 4
 ---
 
 ```{r setup, include=FALSE}

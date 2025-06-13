@@ -8,7 +8,6 @@ params:
     output: "../output"
     reloo: FALSE
     cores: 2
-    threads: 4
 ---
 
 ```{r setup, include=FALSE}
@@ -35,6 +34,7 @@ library(ggpubr)
 source("ingest_survey_data.R")
 raw <- ingest_survey_data("../data/TrainingDayResponses.xlsx")
 jaeger <- jaeger_data(raw)
+MODEL_PREFIX <- "jaeger"
 ```
 
 ## EDA
@@ -108,6 +108,7 @@ Prior predictive checks look good, as expected.
 ```{r m1}
 M1 <- brm(
   data = d,
+  file = modelfile("M1"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -152,13 +153,12 @@ mcmc_plot(m, type="neff_hist")
 
 Some $N_{eff}$ values are slightly below 0.5, but well above 0.1
 
-```{r}
-loo <- loo(m)
-loo
+```{r loo-m1}
+( loo <- loo(M1) )
 plot(loo)
 ```
 
-No problems with the estimated LOO values.
+No problems with the estimated Pareto-k values, they are well below 0.7.
 
 ## Posterior predictive checks
 
@@ -236,6 +236,7 @@ Priors looking good, all values are present.
 ```{r m2}
 M2 <- brm(
   data = d,
+  file = modelfile("M2"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -364,6 +365,7 @@ Grouped PPCs are also looking good, we should be able to trust these priors.
 ```{r m3}
 M3 <- brm(
   data = d,
+  file = modelfile("M3"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -476,6 +478,7 @@ With these priors, there are actually less difference between the levels.
 ```{r m4}
 M4 <- brm(
   data = d,
+  file = modelfile("M4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -516,11 +519,13 @@ mcmc_plot(m, type="neff_hist")
 
 A few $N_{eff}$ values below 0.5, but all of them above 0.25. Diagnostics look OK.
 
-```{r}
-loo(M4)
+```{r loo-m4}
+loo <- loo(M4)
+loo
+plot(loo)
 ```
 
-No problems with the LOO-CV values, all Pareto-k values are below 0.7.
+No problems with the LOO-CV values, all Pareto-k values are below 0.7, though some are between 0.5--0.6.
 
 ```{r}
 M4 <- add_criterion(M4, criterion = "loo")
@@ -559,6 +564,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r e1}
 E1 <- brm(
   data = d,
+  file = modelfile("E1"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -599,10 +605,12 @@ mcmc_plot(m, type="neff_hist")
 
 One low $N_{eff}$ value, but overall the diagnostics look OK.
 
-```{r}
-( loo <- loo(m) )
+```{r loo-e1}
+( loo <- loo(E1) )
 plot(loo)
 ```
+
+All Pareto-k values are good, aroun 0.2 or lower. Well below the limit 0.7.
 
 ```{r}
 pp_check(E1, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -646,6 +654,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r e2}
 E2 <- brm(
   data = d,
+  file = modelfile("E2"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -698,6 +707,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r e3}
 E3 <- brm(
   data = d,
+  file = modelfile("E3"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -786,6 +796,7 @@ validate_prior(prior = priors,
 ```{r e4}
 E4 <- brm(
   data = d,
+  file = modelfile("E4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -827,9 +838,18 @@ mcmc_plot(m, type="neff_hist")
 Lowest $N_{eff}$ value is still around 0.25.
 But overall diagnostics look good.
 
+```{r loo-e4}
+(loo <- loo(E4))
+plot(loo)
+```
+
+All Pareto-k values are good, highest are around 0.6. and some other around 0.5.
+But none close to the limit 0.7.
+
 ```{r}
 summary(E4)
 ```
+
 
 ```{r}
 plot_M4_latent_distribution(E4, "ease-of-use")
@@ -863,6 +883,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r a1}
 A1 <- brm(
   data = d,
+  file = modelfile("A1"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -887,11 +908,12 @@ pp_check(A1, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 summary(A1)
 ```
 
-```{r}
-plot(loo(A1))
+```{r loo-a1}
+(loo <- loo(A1))
+plot(loo)
 ```
 
-All LOO values are OK, well below 0.7.
+All Pareto-k values are OK, around 0.3 or lower, well below 0.7.
 
 ```{r}
 m <- A1
@@ -989,6 +1011,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r a2}
 A2 <- brm(
   data = d,
+  file = modelfile("A2"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1069,6 +1092,7 @@ validate_prior(prior = priors,
 ```{r a3}
 A3 <- brm(
   data = d,
+  file = modelfile("A3"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1150,6 +1174,7 @@ validate_prior(prior = priors,
 ```{r a4}
 A4 <- brm(
   data = d,
+  file = modelfile("A4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1187,6 +1212,33 @@ mcmc_plot(m, type="neff")
 mcmc_plot(m, type="neff_hist")
 ```
 
+```{r loo-a4}
+(loo <- loo(A4))
+plot(loo)
+```
+
+One observation above the limit of 0.7.
+Setting the RELOO option will run the exact Pareto calculation (this is not dune by default, to save run time).
+
+```{r reloo-a4, eval=params$reloo}
+reloofile <- paste0(modelfile("reloo-A4"), ".rds")
+if (file.exists(reloofile)) {
+    (reloo <- readRDS(reloofile))
+} else {
+    Sys.time()
+    (reloo <- reloo(A4, loo, chains=CHAINS, cores=CORES) )
+    Sys.time()
+    saveRDS(reloo, reloofile)
+}
+```
+Note that the reloo results are cached, and included in the docker image by default.
+If you want to reproduce the reloo manually, set a separate cache dir (and mount it into the docker image), and enable the RELOO environment variable.
+
+```{r plot_reloo-a4, eval=params$reloo}
+plot(reloo)
+```
+
+Running reloo, which does exact LOO-CV (leaving out one problematic observation at a time) reveals that all Pareto-k estimates are below 0.7, so we should be able to use the model inferences.
 
 ```{r}
 pp_check(A4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
@@ -1226,6 +1278,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r i1}
 I1 <- brm(
   data = d,
+  file = modelfile("I1"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1250,11 +1303,12 @@ Posterior predictions look good.
 ```{r}
 summary(I1)
 ```
-```{r}
-plot(loo(I1))
+```{r loo-i1}
+(loo <- loo(I1))
+plot(loo)
 ```
 
-LOO values are good also.
+Pareto-k values are good also, max value around 0.4.
 
 ```{r }
 m <- I1
@@ -1309,6 +1363,7 @@ priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
 ```{r i2}
 I2 <- brm(
   data = d,
+  file = modelfile("I2"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1392,6 +1447,7 @@ validate_prior(prior = priors,
 ```{r i3}
 I3 <- brm(
   data = d,
+  file = modelfile("I3"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1541,6 +1597,7 @@ validate_prior(prior = priors,
 ```{r i4}
 I4 <- brm(
   data = d,
+  file = modelfile("I4"),
   family = cumulative(probit),
   formula=formula,
   prior = priors,
@@ -1589,15 +1646,16 @@ pp_check(I4, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
 pp_check(I4, type = "bars_grouped", group="id", ndraws = 500, size = 1/2, fatten = 3/2)
 ```
 
-```{r}
-loo(I4)
+```{r loo-i4}
+(loo <- loo(I4) )
+plot(loo)
 ```
 
 ```{r}
 I4 <- add_criterion(I4, criterion = "loo")
 ```
 
-All LOO-CV values are good, Pareto-k < 0.7.
+LOO-CV says that all values are good, some Pareto-k are around 0.6, but all are less than 0.7.
 
 ```{r}
 plot_M4_latent_distribution(I4, "intent-varying")

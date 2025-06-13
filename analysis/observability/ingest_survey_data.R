@@ -3,6 +3,7 @@
 figsave <- function(file, p, device="pdf", width=15, height=17.8, units="cm") ggsave(paste(params$output, file, sep="/"), p, device = device, dpi = 1200, width=width, height=height, units=units)
 pngsave <- function(file, p, width=15, height=17.8, units="cm") ggsave(paste(params$output, file, sep="/"), p, device = "png", dpi = 1200, width=width, height=height, units=units)
 cachefile <- function(filename) paste(params$cache, filename, sep="/")
+modelfile <- function(model) cachefile(paste(MODEL_PREFIX, model, sep="-"))
 
 # BRMS/Stan config parameters. Adapt these to fit your machine
 CHAINS <- 4

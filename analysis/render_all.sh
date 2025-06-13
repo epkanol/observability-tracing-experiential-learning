@@ -6,9 +6,7 @@
 : "${RELOO:=FALSE}"
 # CORES determines how many (up to CHAINS, default 4) parallel models to run
 : "${CORES:=2}"
-# THREADS determines how many threads to run in each model (default 4).
-# As brms and Stan are quite CPU-bound, CORES*THREADS should not exceed the number of physical CPU cores available.
-: "${THREADS:=4}"
+
 
 SOURCE=analysis
 OUTPUT=output
@@ -27,6 +25,6 @@ See README.md for details on how to check status of model building.
 
 for f in ${SOURCE}/${PREFIX}*.Rmd; do
     echo "============> Starting to generate file ${f} at:" $(date -Iseconds)
-    R -e "rmarkdown::render(\"${f}\", params=list(cache=\"${CACHE}\", reloo=${RELOO}, cores=${CORES}, threads=${THREADS}), output_dir=\"${OUTPUT}\")" || echo "FAILED - please check your environment or settings"
+    R -e "rmarkdown::render(\"${f}\", params=list(cache=\"${CACHE}\", reloo=${RELOO}, cores=${CORES}), output_dir=\"${OUTPUT}\")" || echo "FAILED - please check your environment or settings"
     echo "============> Finished file ${f} at:" $(date -Iseconds)
 done

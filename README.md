@@ -59,11 +59,11 @@ In case you want to run with a separately stored cache directory, use the CACHE 
 
 Setting the `RELOO` environment variable to `TRUE` will run the reloo function,
 which performs exact Leave-One-Out Cross-Validation once per datapoint signaled as potentially influential by the regular `loo` function.
-The result of the reloo will be stored in the output directory, where it can be further analysed (e.g. plotted).
+The result of the reloo will be stored in the cache directory, where it can be further analysed (e.g. plotted).
 
-`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e RELOO=TRUE -e PREFIX=02 -e observability-tracing`
+`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e RELOO=TRUE -e PREFIX=02 observability-tracing`
 
-Running `reloo` takes considerably longer to complete, but it should not take much longer than a lunch break.
+Running `reloo` takes considerably longer to complete, but it should not take much longer than a coffee break.
 The output of the `docker run` command will tell if it is performing the `reloo` step, and the state of the models can be inspected via the `docker top` command.
 
 ```
@@ -83,11 +83,3 @@ UID                 PID                 PPID                C                   
 The number of parallelly executing models is controlled via the `CORES` environment, which defaults to 2.
 
 `docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e CORES=2 -e PREFIX=02 -e CACHE="../.cache" observability-tracing`
-
-#### THREADS
-
-The number of threads in each model is controlled via the `THREADS` environment, which defaults to 4.
-
-`docker run --mount type=bind,source=${PWD}/observability/output,target=/home/app/output -e THREADS=4 -e PREFIX=02 observability-tracing`
-
-The number of physical CPUs (i.e. ignoring hyperthreads and fake CPUs) should be equal or less than `CORES*THREADS`, as Stan and brms are both quite CPU-intensive.
