@@ -1,0 +1,181 @@
+---
+title: "Followup survey"
+author: "Anders Sundelin"
+date: "2025-06-16"
+output: html_document
+params:
+    cache: "../.cache"
+    output: "../output"
+    reloo: FALSE
+    cores: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(bookdown)
+library(ggformula)
+library(brms)
+library(bayesplot)
+library(tidybayes)
+```
+
+# Followup
+```{r validate-params}
+stopifnot(dir.exists(params$cache), dir.exists(params$output))
+```
+
+
+```{r ingest}
+source("ingest_survey_data.R")
+raw <- ingest_followup_data("../data/FollowupResponses.xlsx")
+followup <- jaeger_followup(raw)
+MODEL_PREFIX <- "followup"
+```
+
+## EDA, visualizations
+
+```{r}
+followup |> ggplot(aes(x=as.numeric(enjoy_using))) +
+    geom_histogram(stat="count") +
+  scale_x_continuous(name="rating", breaks = 1:7, labels = c("Extremely\nLikely", "Quite\nLikely", "Slightly\nLikely", "Neutral", "Slightly\nUnlikely", "Quite\nUnlikely", "Extremely\nUnlikely") ) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+# Enjoy using Jaeger
+
+## Enjoy using Jaeger, Population-level intercept only
+
+```{r}
+d <- followup |> select(enjoy_using)
+formula <- enjoy_using | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+validate_prior(prior = priors,
+               data=d,
+               family=cumulative(probit),
+               formula=formula)
+```
+
+The warning about the default prior not being used can safely be ignored.
+We specify our own priors for all parameters, and do not rely on `brms` default priors.
+
+### Prior predictive checks
+
+```{r m1_ppc}
+M1_ppc <- brm(
+  data = d,
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
+  drop_unused_levels = F,
+  sample_prior = "only",
+  backend="cmdstanr",
+  seed = 1
+)
+```
+No divergent transitions, all chains sampled OK
+
+```{r}
+pp_check(M1_ppc, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+All outcomes are quite likely, with the middle ones having the highest likelihood (due to our use of separated normal distrubutions, the tails add up).
+
+### Sampling
+```{r m1}
+M1 <- brm(
+  data = d,
+  file = modelfile("M1"),
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
+  seed = 1
+)
+m <- M1
+```
+
+No divergent transitions. Let's do the posterior checks
+
+```{r}
+p <- mcmc_trace(m)
+pars <- levels(p[["data"]][["parameter"]])
+plots <- seq(1, to=length(pars), by=6)
+lapply(plots, function(i) {
+  start <- i
+  end <- start+5
+  mcmc_trace(m, pars = na.omit(pars[start:end]))
+  })
+```
+
+The chains seem to mix well. The disc is flat as the width (variance) of the latent variable is fixed in this model.
+
+```{r}
+mcmc_plot(m, type="rhat")
+mcmc_plot(m, type="rhat_hist")
+mcmc_plot(m, type="neff")
+mcmc_plot(m, type="neff_hist")
+```
+
+One $N_{eff}$ value is below 0.4, but well above 0.1.
+Other diagnostics look OK.
+
+```{r loo-m1}
+( loo <- loo(M1) )
+plot(loo)
+```
+
+No problems with the estimated LOO values, the max is around 0.22.
+
+### Posterior predictive checks
+
+```{r}
+pp_check(M1, type = "bars", ndraws = 500, size = 1/2, fatten = 3/2)
+```
+
+Our model fits the data well, and still allows unlikely levels to show up, if those levels should appear in the data.
+
+```{r}
+summary(M1)
+```
+
+```{r}
+plot_M1_latent_distribution(M1, "enjoy_using")
+```
+```{r}
+plot_M1_posterior_mean(M1, "enjoy_using", function (df) {df |> summarize(mean(as.numeric(enjoy_using))) })
+```
+```{r}
+followup |> summarise(mean(as.numeric(enjoy_using)))
+```
+
+Sample mean is visible in the figure as a dashed line (slightly above QL, as the numeric value specifies)
+```{r}
+expected_value_M1(M1)
+```
+
+We only have six respondents, and we measure the enjoyment with only one question, which means that there is not much data to sample from.
+Still, the expected mean is trending towards positive (owing to the fact that 4 respondents would Quite Agree, and 2 would Extremely Agree that they enjoy using Jaeger).
+The expected value 95%-interval ranges from almost Quite Agree, to a bit above Neutral, with the average being just over Slightly Agree.

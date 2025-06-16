@@ -910,3 +910,67 @@ plot_T4_latent_distribution <- function(m, title, lower=-4.5, upper=3.5) {
     labs(title = paste("Latent distribution for", title),
          subtitle = paste("Formula: ", m$formula))
 }
+
+# Followup survey data
+followup_likert7 <- function(x) {
+  # some questions have different spellings
+  factor(x, levels = c("Extremely Agree", "Quite Agree", "Slightly Agree", "Neutral",
+                       "Slightly Disagree", "Quite Disagree", "Extremely Disagree"),
+         labels=c("XL", "QL", "SL", "N", "SU", "QU", "XU"), ordered = T)
+}
+
+ingest_followup_data <- function(file) {
+  read_excel(file,
+             skip=1, # first row is headers, which are quite long
+             col_names = c("id",
+                           "start_time",
+                           "end_time",
+                           "email",
+                           "name",
+                           "lastmodified",
+                           "consent",
+                           "team",
+                           "joinedYear",
+                           "profYear",
+                           "chosen_stream",
+                           "has_used",     # L
+                           "useful",
+                           "lack_motivation",
+                           "too_complex",
+                           "not_context_switch",
+                           "has_other_tasks",
+                           "team_other_tasks",
+                           "would_impact_dates",  # S
+                           "enjoy_using",
+                           "develop_quicker",
+                           "understand_issues",
+                           "has_explained_team",
+                           "using_learnings_when",
+                           "general_feedback"   # Y
+             )) |> select(-email, -name, -lastmodified) |>
+    mutate(
+      id = as.factor(id),
+      consent = as.factor(consent),
+      team = as.factor(team),
+      joinedYear = as.integer(joinedYear),
+      profYear = as.integer(profYear),
+      chosen_stream = streams(chosen_stream),
+      has_used = as.factor(has_used),
+      useful = followup_likert7(useful),
+      lack_motivation = followup_likert7(lack_motivation),
+      too_complex = followup_likert7(too_complex),
+      not_context_switch = followup_likert7(not_context_switch),
+      has_other_tasks = followup_likert7(has_other_tasks),
+      team_other_tasks = followup_likert7(team_other_tasks),
+      would_impact_dates = followup_likert7(would_impact_dates),
+      enjoy_using = followup_likert7(enjoy_using),
+      develop_quicker = followup_likert7(develop_quicker),
+      understand_issues = followup_likert7(understand_issues),
+      has_explained_team = followup_likert7(has_explained_team),
+      site = as.factor(case_when(
+        team %in% indian_teams ~ "India",
+        T ~ "Europe"
+      )))
+}
+
+jaeger_followup <- function(df) { df |> filter(consent == 'Yes', chosen_stream == 'JAEGER') |> select(-start_time, -end_time, -consent, -team, -chosen_stream) }
