@@ -28,6 +28,11 @@ library(tidybayes)
 library(ggpubr)
 ```
 
+```{r validate-params}
+# If running in RStudio (which defaults working dir to the location of the Rmd file), create a directory somewhere (e.g. in the root of the repo), and use it at param, e.g. '../../output')
+stopifnot(dir.exists(params$cache), dir.exists(params$output))
+```
+
 ```{r ingest}
 source("ingest_survey_data.R")
 raw <- ingest_survey_data("../data/TrainingDayResponses.xlsx")

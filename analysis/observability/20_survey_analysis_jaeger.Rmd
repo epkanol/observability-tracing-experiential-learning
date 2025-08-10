@@ -29,6 +29,10 @@ library(ggpubr)
 ```
 
 # Survey Results - Jaeger Evaluation
+```{r validate-params}
+# If running in RStudio (which defaults working dir to the location of the Rmd file), create a directory somewhere (e.g. in the root of the repo), and use it at param, e.g. '../../output')
+stopifnot(dir.exists(params$cache), dir.exists(params$output))
+```
 
 ```{r ingest}
 source("ingest_survey_data.R")
@@ -1505,7 +1509,9 @@ plot_M2_posterior_mean(I3, "intend-to-use", intent_mean, limits=c(1,7))
 
 Slightly less positive replies by the Indian cohort.
 
-### Narrower priors (@@@ move to 05_)
+### Narrower priors
+
+Example of running with narrower standard deviation prior (exp(10) instead of our default exp(1))
 
 ```{r}
 priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),

@@ -189,6 +189,8 @@ In order to reduce overfitting and increase model generalizability, experts [@ge
 Therefore, models $\mathcal{M}_3$ and onwards allow---via $u_i$--- adjusting the intercepts per respondent, as respondents might value Likert levels differently.
 In models $\mathcal{M}_4-\mathcal{I}_4$, we also allow the latent variable's variance (via the dispersion parameter $\alpha_i$) to vary, depending on which site held the training.
 
-## References
+## Credits
 
 I am very much indebted to Solomon Kurz, who explains the basics of the cumulative probit in [this blog post](https://solomonkurz.netlify.app/blog/2021-12-29-notes-on-the-bayesian-cumulative-probit/). 
+
+## References
