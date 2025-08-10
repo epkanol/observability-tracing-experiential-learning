@@ -1,0 +1,194 @@
+---
+title: "Methodology"
+author: "Anders Sundelin"
+date: "2025-08-10"
+output: html_document
+bibliography: bibliography.bib
+params:
+    cache: "../.cache"
+    output: "../output"
+    reloo: FALSE
+    cores: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(bookdown)
+library(ggformula)
+library(brms)
+library(bayesplot)
+library(tidybayes)
+library(ggpubr)
+```
+
+
+```{r model-example}
+source("ingest_survey_data.R")
+raw <- ingest_survey_data("../data/TrainingDayResponses.xlsx")
+MODEL_PREFIX <- "methods"
+d <- get_jaeger_accessible(jaeger_data(raw)) |> select(accessible)
+formula <- accessible | thres(6) ~ 1
+priors <- c(prior(normal(-1.068, 1), class = Intercept, coef = 1),
+            prior(normal(-0.566, 1), class = Intercept, coef = 2),
+            prior(normal(-0.180, 1), class = Intercept, coef = 3),
+            prior(normal( 0.180, 1), class = Intercept, coef = 4),
+            prior(normal( 0.566, 1), class = Intercept, coef = 5),
+            prior(normal( 1.068, 1), class = Intercept, coef = 6))
+A1 <- brm(
+  data = d,
+  file = modelfile("A1"),
+  family = cumulative(probit),
+  formula=formula,
+  prior = priors,
+  drop_unused_levels = F,
+  backend="cmdstanr",
+  warmup = 1000,
+  iter  = ITERATIONS,
+  chains = CHAINS,
+  cores = CORES,
+  seed = 1,
+  control = list(adapt_delta=0.99)
+)
+```
+
+# Data Analysis
+
+We employed 7-level symmetric Likert scales to assess respondents' agreement with the respective statement in our survey. 
+All Likert items were mandatory, and all qualitative (free-format) questions were optional.
+The survey instruments are available, as Markdown files, in the `analysis/data` subdirectory.
+
+We relied on Bayesian data analysis to summarize the responses for the TAM questions.
+Under TAM, multiple questions are assumed to measure the same construct (usability, ease-of-use, and intent-to-use), and the answers from each respondent form a distribution of ratings used in our Bayesian models.
+
+As control groups, we used two other training sessions, whose participants used tools unrelated to Jaeger tracing. 
+This allows us to compare the expected score (according to the metrics in TAM) between these groups and our subjects.
+
+We summarized survey responses using Bayesian models of various complexity, using PSIS-LOO [@vehtari2017practical] to rank the models.
+All models utilized the `brms` framework [@burkner2017brms], which is a front-end for the `Stan` statistical programming language.
+
+Model construction and evaluation followed a Bayesian work-flow [@gelman2020bayesian], where we:
+
+  * determine which phenomenon that we were interested in---such as which training session that were investigated;
+  * determine the factors that might have a causal influence on this phenomenon, such as on which site the training was held;
+  * determine which priors to use, reflecting the knowledge we have about the organization, and validate that simulations from these priors match our expectations, before the model sees the data;
+  * run the model, using the collected data and our priors, and check for model convergence, using standard tools (possibly iterate and adjust hyperparameters, such as step size);
+  * use the obtained posterior distribution, and construct appropriate summary statistics that help us learn about the phenomenon.
+
+
+All our models used a *cumulative probit* model, which assumes that the underlying construct being measured by the (discrete, but ordered) Likert responses follows the standard normal distribution function.
+The *k* response categories to the Likert questions (e.g., *Neutral*, *Slightly Likely*) divide this distribution, using *k-1* thresholds, so that each category occurs with different probability, and the data seen by the model (plus prior knowledge) determine these thresholds.
+
+## Details on the cumulative probit model
+
+```{r}
+(
+left_p <- plot_M1_latent_distribution(A1, "usable") + ggtitle(NULL) + scale_x_continuous(expression(phi*(z)), breaks = -3:3,
+                                                                                         sec.axis = dup_axis(
+                                                                                           name = NULL,
+                                                                                           breaks = fixef(A1)[1:6, 1] |> as.double(),
+                                                                                           labels = parse(text = str_c("tau[", 1:6, "]"))
+                                                                                           )
+                                                                                         )
+)
+```
+
+This figure shows how seven areas under the distribution function $\phi(z) \equiv \mathcal{N}(0,1)$ are formed by six different cutpoints, $\tau_1$ to $\tau_6$, each representing a Likert response.
+The last (seventh) Likert response is represented by the area between the sixth cutpoint ($\tau_6$) and infinity. 
+This works, because the total area under the nomal distribution adds up to $1$, just like probabilities ("The Law of Total Probability").
+
+Expressed as an equation, we have:
+$$
+\begin{equation}    
+    p(k) = 
+    \begin{cases} 
+    \Phi(\tau_1) = \int_{-\infty}^{\tau_{1}} \phi(z)\,dz & \text{when } k = 1  \\
+    \Phi(\tau_k) - \Phi(\tau_{k-1}) = \int_{-\infty}^{\tau_{k}} \phi(z)\,dz - \int_{-\infty}^{\tau_{k-1}} \phi(z)\,dz & \text{when } 1 < k < 7  \\ 
+    1 - \Phi(\tau_6) = 1 - \int_{-\infty}^{\tau_{6}} \phi(z)\,dz & \text{when } k = 7
+    \end{cases}
+\end{equation}
+$$
+
+The probability $p(k)$ of seeing response $k \in \{k: \mathbb{N}, 1 \le k \le 7\}$ in a 7-level Likert scale, given the set of six thresholds $\tau_{k}$ is defined by this equation.
+In the figure above, where $\tau_1 \approx -1.406$, the probability of seeing response $1$ (*Extremely Likely*) is $p(1) \approx 7.99\%$, while $\tau_2 \approx 0.226$ implies $p(2) \approx 50.9\%$, and so on.
+
+## Expected value
+
+```{r}
+(
+  right_p <- plot_M1_posterior_mean(A1, "usability", accessible_mean, limits=c(1,4)) + ggtitle(NULL, NULL) + scale_x_continuous(limits=c(1,4), breaks = 1:7, labels=c("1 - XL", "2 - QL", "3 - SL", "4 - N", "5 - SUL", "6 - QUL", "7 - XUL"))
+)
+```
+
+This figure shows the distribution of the model-predicted *expected response*, including the average and $95\%$ credible intervals. 
+The dashed line represents the arithmetic sample mean of the Likert responses, which assumes equidistant levels.
+In our analysis, we instead use the expected response, defined by:
+
+$$
+\begin{equation}
+    \mathbb{E}(r) = \sum_{k=1}^7{p(k) \times k}
+\end{equation}
+$$
+
+In the figure above, the mean expected value point-estimate is $2.58$, and the model estimates, with $95\%$ probability, the expected value to lie between $2.33-2.87$.
+Thus, this model is robustly saying that the expected rating ranges between *Quite Likely* and *Somewhat Likely*, slightly closer to the latter. 
+
+Note that (unlike the classic arithmetic ways Likert data are treated) this model *does not* assume equidistant levels between levels.
+Rather, the fact that the six cutpoints ($\tau_1-\tau_6$) are available to vary freely (as long as they are ordered $1-6$, mean that certain levels are more likely to occur than others. 
+The way the model determine this is by looking at the data, which then is used to derive the posterior predictions, which we use above to calculate the expected response value (which is essentially a weighted average of the expected score).
+
+## Model construction
+
+We constructed models for usability (6 questions per respondent), ease-of-use (6 questions), accessibility (3 questions), and intent-to-use (2 questions). 
+Following recommendations [@gelman2006arm], [@mcelreath2020statistical], we constructed models of varying complexity and ranked their fitness to the data via the LOO-CV algorithm [@vehtari2017practical].
+
+In this replication package, you will find both question formulations, anonymized response data, and all our models, including visualizations.
+
+The simplest models for each construct ($\mathcal{M}_1$, $\mathcal{E}_1$, $\mathcal{A}_1$, $\mathcal{I}_1$) contain no predictors at all. They could be seen as "global averages," not considering any of the available predictors in the data.
+
+Next level of models ($\mathcal{M}_2$, $\mathcal{E}_2$, $\mathcal{A}_2$, $\mathcal{I}_2$) contain the site (categorical, value "Europe" or "India") predictor as a fixed effect. In this model, we acknowledge that the trainings took place in different sites, allowing for eventual changes due to this to appear in the data, as models that vary according to whether the respondent took place in the European or Indian training session.
+
+The next level of models ($\mathcal{M}_3$, $\mathcal{E}_3$, $\mathcal{A}_3$, $\mathcal{I}_3$) adds a regularizing prior on the respondent. This means that we use *partial pooling,* which allows for different respondents (i.e., humans) to have different perceptions about how they perceive the Likert levels (e.g., my sense of *Extremely Likely* may not be the same as yours). 
+The reason we do this is that we are, typically, not interested in the exact answer for these particular individuals, but we want to model and predict how the hypothetical *future respondents* behave.
+Partial pooling achieves this by "shrinking to the population average," to avoid being biased by extreme outliers.
+
+The final set of models  ($\mathcal{M}_4$, $\mathcal{E}_4$, $\mathcal{A}_4$, $\mathcal{I}_4$) are what we used to make predictions. 
+They are specified with the equations:
+
+$$
+\begin{equation}
+     \begin{aligned} 
+     p(\text{rating} = k | \{ \tau_{k} \}, \mu_{i}, \alpha_{i}) & = \Phi(\alpha_{i} [\tau_{k} - \mu_{i}]) - \Phi( \alpha_{i} [\tau_{k - 1} - \mu_{i}]) \\ 
+     \mu_{i}          & =    0 + \beta_1 \text{siteIndia}_i + u_i \\
+     \log(\alpha_{i}) & =    0 + \gamma_1 \text{siteIndia}_i \\ 
+     u_i              & \sim \mathcal N(0, \sigma_u) \\
+     \tau_1           & \sim \mathcal N(-1.068, 1) \\
+     \tau_2           & \sim \mathcal N(-0.566, 1) \\
+     \tau_3           & \sim \mathcal N(-0.180, 1) \\
+     \tau_4           & \sim \mathcal N(0.180, 1) \\
+     \tau_5           & \sim \mathcal N(0.566, 1) \\
+     \tau_6           & \sim \mathcal N(1.068, 1), \\
+     \beta_1          & \sim \mathcal{N}(0,1) \\
+     \gamma_1         & \sim \mathcal{N}(0, \frac{\log(2)}{2}) \\
+     \sigma_u         & \sim \operatorname{Exponential}(5)
+     \end{aligned}
+\end{equation}
+$$
+
+In all our models, we used priors for the intercepts $\tau_k$ that place similar probability on each response (e.g., $\int_{-\infty}^{-1.068} \phi(x) dx \approx \int_{-1.068}^{-0.566} \phi(x) dx \approx \frac{1}{7}$).
+For models $\mathcal{M}_2$ and onwards, we added a binary predictor that encodes the respondent's site, as we wanted to assess the training on both development sites (Europe and India).
+Europe is the reference category, which is being adjusted by $\beta_1$ and $\gamma_i$ for respondents based in India.
+In order to reduce overfitting and increase model generalizability, experts [@gelman2006arm], [@mcelreath2020statistical] recommend employing ``partial pooling.''
+Therefore, models $\mathcal{M}_3$ and onwards allow---via $u_i$--- adjusting the intercepts per respondent, as respondents might value Likert levels differently.
+In models $\mathcal{M}_4-\mathcal{I}_4$, we also allow the latent variable's variance (via the dispersion parameter $\alpha_i$) to vary, depending on which site held the training.
+
+## References
+
+I am very much indebted to Solomon Kurz, who explains the basics of the cumulative probit in [this blog post](https://solomonkurz.netlify.app/blog/2021-12-29-notes-on-the-bayesian-cumulative-probit/). 

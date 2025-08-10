@@ -28,9 +28,10 @@ library(tidybayes)
 library(ggpubr)
 ```
 
-## R Markdown
+## Cycle 1: Development practices survey (EDA)
 
 ```{r validate-params}
+# If running in RStudio (which defaults working dir to the location of the Rmd file), create a directory somewhere (e.g. in the root of the repo), and use it at param, e.g. '../../output')
 stopifnot(dir.exists(params$cache), dir.exists(params$output))
 ```
 
@@ -43,7 +44,6 @@ df <- raw |> filter(consent == "Yes") |> select(-start_time, -end_time)
 
 ```{r}
 summary(df |> select(has_pushed_java, has_pushed_vue, has_added_logs, has_debug_unit, has_debug_ft, has_used_pm, has_traced_jaeger))
-
 ```
 
 
@@ -214,6 +214,8 @@ df |> ggplot(aes(x=exp_used_jaeger, fill=timezone)) + geom_histogram(position = 
 df |> group_by(timezone) |> summarize(mean(exp_used_jaeger), sd(exp_used_jaeger),  median(exp_used_jaeger), IQR(exp_used_jaeger), quantile(exp_used_jaeger, 0.25), quantile(exp_used_jaeger, 0.75))
 ```
 
+## Summary
+
 ```{r}
 long_rates <- df |> select(id, timezone, starts_with("exp_")) |> pivot_longer(starts_with("exp_"), values_to = "selfrating", names_prefix = "exp_") |>
   mutate(order = as.integer(case_when(
@@ -235,6 +237,9 @@ long_rates <- df |> select(id, timezone, starts_with("exp_")) |> pivot_longer(st
     T ~ NA
     )))
 ```
+
+Self rated competence in the various competence areas, as a boxplot.
+
 ```{r}
 (
   p <- long_rates |> 
@@ -280,7 +285,6 @@ long_actions <- df |> select(id, timezone, starts_with("has_")) |> pivot_longer(
 ```{r}
 long_actions|> group_by(action_name, order, action) |> summarise(n=n()) |> mutate(pct=round(100*n/sum(n), 2)) |> filter(action=="Yes") |> arrange(order)
 ```
-
 
 ```{r}
 long_actions|> group_by(timezone, action_name, order, action) |> summarise(n=n()) |> mutate(pct=n/sum(n)) |> filter(action=="Yes") |> ggplot(aes(fill=timezone, y=pct, x=fct_reorder(action_name, order))) + geom_bar(position="dodge", stat="identity") + theme_bw() +
